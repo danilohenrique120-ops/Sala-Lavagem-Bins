@@ -1,0 +1,6 @@
+{
+  "name": "ArchViz 3D UE5 - Sala de Lavagem de Bins e Central Hospitalar",
+  "description": "Visualização arquitetônica 3D interativa em tempo real inspirada no Unreal Engine 5 com renderização fotorrealista da Sala de Lavagem de Bins 1000L, bancada contínua de mármore marrom claro com pia hospitalar, escada plataforma inox, secador cirúrgico ventilado e porta de correr de 3,5m.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
