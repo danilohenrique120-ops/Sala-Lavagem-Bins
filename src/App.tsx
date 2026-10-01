@@ -13,11 +13,12 @@ import {
   FloorColor,
   CameraPreset,
   WallVisibility,
+  GlossLevel,
 } from './types/archviz';
 import { EQUIPMENT_LIST } from './data/equipmentData';
 import { ThreeCanvas } from './components/3d/ThreeCanvas';
 import { HeaderNav } from './components/ui/HeaderNav';
-import { CameraToolbar } from './components/ui/CameraToolbar';
+import { CameraToolbar, CAMERA_PRESETS } from './components/ui/CameraToolbar';
 import { EquipmentDrawer } from './components/ui/EquipmentDrawer';
 import { MaterialConfigurator } from './components/ui/MaterialConfigurator';
 import { TechnicalBlueprintModal } from './components/ui/TechnicalBlueprintModal';
@@ -26,22 +27,27 @@ import { WalkthroughGuide } from './components/ui/WalkthroughGuide';
 export default function App() {
   // Render & Lighting Configuration
   const [renderMode, setRenderMode] = useState<RenderMode>('lumen');
-  const [lightingPreset, setLightingPreset] = useState<LightingPreset>('cleanroom_1000lux');
+  const [lightingPreset, setLightingPreset] = useState<LightingPreset>('daylight');
   const [marbleTone, setMarbleTone] = useState<MarbleTone>('emperador_light');
-  const [steelFinish, setSteelFinish] = useState<SteelFinish>('mirror_polish');
-  const [floorColor, setFloorColor] = useState<FloorColor>('hospital_blue');
+  const [steelFinish, setSteelFinish] = useState<SteelFinish>('brushed_316');
+  const [floorColor, setFloorColor] = useState<FloorColor>('clean_grey');
+  const [glossLevel, setGlossLevel] = useState<GlossLevel>('satin_hospital');
+  const [bloomEnabled, setBloomEnabled] = useState<boolean>(false);
+  const [exposure, setExposure] = useState<number>(0.95);
 
   // Wall Visibility Programming (all walls, cutaway inside, no walls)
   const [wallVisibility, setWallVisibility] = useState<WallVisibility>('all');
 
   // Navigation & Camera
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
-  const [activePreset, setActivePreset] = useState<CameraPreset | null>(null);
+  const [activePreset, setActivePreset] = useState<CameraPreset | null>(CAMERA_PRESETS[0]);
 
   // Overlays & Toggles
   const [showDimensions, setShowDimensions] = useState<boolean>(true);
+  const [showHotspots, setShowHotspots] = useState<boolean>(false);
   const [isDoorOpen, setIsDoorOpen] = useState<boolean>(false);
   const [isTapActive, setIsTapActive] = useState<boolean>(true);
+  const [isCipActive, setIsCipActive] = useState<boolean>(false);
 
   // Measurement Tool
   const [isMeasuring, setIsMeasuring] = useState<boolean>(false);
@@ -76,6 +82,14 @@ export default function App() {
     setIsTapActive((prev) => !prev);
   };
 
+  const handleToggleCip = () => {
+    setIsCipActive((prev) => !prev);
+  };
+
+  const handleToggleHotspots = () => {
+    setShowHotspots((prev) => !prev);
+  };
+
   const handleCycleWallVisibility = () => {
     setWallVisibility((prev) => {
       if (prev === 'all') return 'cutaway';
@@ -106,10 +120,16 @@ export default function App() {
         marbleTone={marbleTone}
         steelFinish={steelFinish}
         floorColor={floorColor}
+        glossLevel={glossLevel}
+        bloomEnabled={bloomEnabled}
+        exposure={exposure}
         showDimensions={showDimensions}
+        showHotspots={showHotspots}
         isDoorOpen={isDoorOpen}
         isTapActive={isTapActive}
         onToggleTap={handleToggleTap}
+        isCipActive={isCipActive}
+        onToggleCip={handleToggleCip}
         activePreset={activePreset}
         selectedEquipmentId={selectedEquipmentId}
         onSelectEquipment={setSelectedEquipmentId}
@@ -156,6 +176,10 @@ export default function App() {
         onToggleDoor={handleToggleDoor}
         isTapActive={isTapActive}
         onToggleTap={handleToggleTap}
+        isCipActive={isCipActive}
+        onToggleCip={handleToggleCip}
+        showHotspots={showHotspots}
+        onToggleHotspots={handleToggleHotspots}
         wallVisibility={wallVisibility}
         onCycleWallVisibility={handleCycleWallVisibility}
         isMeasuring={isMeasuring}
@@ -178,6 +202,12 @@ export default function App() {
         onSelectRenderMode={setRenderMode}
         lightingPreset={lightingPreset}
         onSelectLighting={setLightingPreset}
+        glossLevel={glossLevel}
+        onSelectGloss={setGlossLevel}
+        bloomEnabled={bloomEnabled}
+        onToggleBloom={() => setBloomEnabled((prev) => !prev)}
+        exposure={exposure}
+        onSelectExposure={setExposure}
         marbleTone={marbleTone}
         onSelectMarble={setMarbleTone}
         steelFinish={steelFinish}

@@ -1,5 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+
 import {
   RenderMode,
   CameraMode,
@@ -9,7 +16,10 @@ import {
   FloorColor,
   CameraPreset,
   WallVisibility,
+  GlossLevel,
+  HotspotItem,
 } from '../../types/archviz';
+import { HOTSPOTS_DATA } from '../../data/equipmentData';
 import { RoomBuilder, RoomMeshes } from './RoomBuilder';
 
 interface ThreeCanvasProps {
@@ -20,10 +30,16 @@ interface ThreeCanvasProps {
   marbleTone: MarbleTone;
   steelFinish: SteelFinish;
   floorColor: FloorColor;
+  glossLevel?: GlossLevel;
+  bloomEnabled?: boolean;
+  exposure?: number;
   showDimensions: boolean;
+  showHotspots: boolean;
   isDoorOpen: boolean;
   isTapActive: boolean;
   onToggleTap: () => void;
+  isCipActive: boolean;
+  onToggleCip: () => void;
   activePreset: CameraPreset | null;
   selectedEquipmentId: string | null;
   onSelectEquipment: (id: string | null) => void;
@@ -42,10 +58,16 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   marbleTone,
   steelFinish,
   floorColor,
+  glossLevel = 'satin_hospital',
+  bloomEnabled = true,
+  exposure = 0.95,
   showDimensions,
+  showHotspots,
   isDoorOpen,
   isTapActive,
   onToggleTap,
+  isCipActive,
+  onToggleCip,
   activePreset,
   selectedEquipmentId,
   onSelectEquipment,
@@ -58,14 +80,14 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const composerRef = useRef<EffectComposer | null>(null);
+  const bloomPassRef = useRef<UnrealBloomPass | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
   const roomMeshesRef = useRef<RoomMeshes | null>(null);
 
-  // Interaction & Camera state
-  const isPointerDownRef = useRef(false);
-  const previousPointerPosRef = useRef({ x: 0, y: 0 });
-  const cameraTargetRef = useRef(new THREE.Vector3(-0.3, 1.1, 0));
-  const sphericalRef = useRef({ radius: 8.5, theta: 0.65, phi: 1.15 });
+  // Hotspots Sprite Group
+  const hotspotsGroupRef = useRef<THREE.Group | null>(null);
 
   // Shift Panning state
   const [isShiftActive, setIsShiftActive] = useState(false);
@@ -76,6 +98,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const fpYawRef = useRef(0);
   const fpPitchRef = useRef(0);
   const keysDownRef = useRef<{ [key: string]: boolean }>({});
+  const isPointerDownRef = useRef(false);
+  const previousPointerPosRef = useRef({ x: 0, y: 0 });
 
   // Door Animation State
   const doorCurrentOffsetRef = useRef(0);
@@ -103,7 +127,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
   const highlightBoxRef = useRef<THREE.BoxHelper | null>(null);
 
-  // 1. INITIALIZE THREE.JS SCENE
+  // 1. INITIALIZE THREE.JS SCENE WITH UNREAL ENGINE STANDARDS
   useEffect(() => {
     if (!mountRef.current) return;
     const container = mountRef.current;
@@ -111,14 +135,14 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     const height = container.clientHeight;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0f1d); // Deep architectural slate
+    scene.background = new THREE.Color(0x0b1120); // Dark cleanroom slate
     sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(52, width / height, 0.1, 100);
-    camera.position.set(4.6, 3.8, 5.6);
-    camera.lookAt(cameraTargetRef.current);
+    const camera = new THREE.PerspectiveCamera(48, width / height, 0.1, 100);
+    camera.position.set(0.65, 3.35, 5.05);
     cameraRef.current = camera;
 
+    // WebGLRenderer with PCFSoftShadowMap & ACES Filmic
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       preserveDrawingBuffer: true,
@@ -126,52 +150,86 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    // Calibrated exposure for rich, contrasty, non-washed out textures
-    renderer.toneMappingExposure = 0.96;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = exposure; // Calibrated for authentic cleanroom lighting
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Atmospheric balanced ambient lighting (rich shadows, no blown-out white)
-    const ambientLight = new THREE.AmbientLight(0xfff7ed, 0.45);
-    scene.add(ambientLight);
+    // IBL Environment Map: RoomEnvironment with PMREMGenerator
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    pmremGenerator.compileEquirectangularShader();
+    const roomEnv = new RoomEnvironment();
+    const envTexture = pmremGenerator.fromScene(roomEnv, 0.04).texture;
+    scene.environment = envTexture;
+    // Calibrate environment intensity to avoid blinding specular reflections
+    (scene as any).environmentIntensity = 0.35;
 
-    // Directional sunlight bounce with contact shadows
-    const sunLight = new THREE.DirectionalLight(0xe2e8f0, 0.65);
-    sunLight.position.set(7.0, 5.5, 2.0);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 1024;
-    sunLight.shadow.mapSize.height = 1024;
-    sunLight.shadow.camera.near = 0.5;
-    sunLight.shadow.camera.far = 15;
-    sunLight.shadow.camera.left = -5;
-    sunLight.shadow.camera.right = 5;
-    sunLight.shadow.camera.top = 5;
-    sunLight.shadow.camera.bottom = -5;
-    sunLight.shadow.bias = -0.0006;
-    scene.add(sunLight);
+    // OrbitControls with Damping enabled
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(-0.25, 1.15, -0.45);
+    controls.maxPolarAngle = Math.PI / 2.05; // avoid going under floor
+    controls.minDistance = 1.2;
+    controls.maxDistance = 18;
+    controls.screenSpacePanning = true;
+    controlsRef.current = controls;
 
     // Build the 3D Room & Equipment
-    const room = RoomBuilder.buildRoom(renderer, {
+    const room = RoomBuilder.buildRoom(renderer, envTexture, {
       marbleTone,
       floorColor,
       steelFinish,
       renderMode,
       wallVisibility,
+      glossLevel,
     });
     scene.add(room.root);
     roomMeshesRef.current = room;
 
-    // Sync water state immediately
     room.setWaterActive(isTapActive);
+    room.setCipActive(isCipActive);
 
+    // 3D Floating Hotspots Group (Kept empty - blue circle markers removed per user request)
+    const hotspotsGroup = new THREE.Group();
+    hotspotsGroup.name = 'HotspotsGroup';
+    hotspotsGroup.visible = false;
+    scene.add(hotspotsGroup);
+    hotspotsGroupRef.current = hotspotsGroup;
+
+    // Highlight helper for selected items
     const dummyObj = new THREE.Object3D();
     const boxHelper = new THREE.BoxHelper(dummyObj, 0x38bdf8);
     boxHelper.visible = false;
     scene.add(boxHelper);
     highlightBoxRef.current = boxHelper;
+
+    // EffectComposer Post-Processing: UnrealBloomPass & OutputPass
+    let composer: EffectComposer | null = null;
+    try {
+      composer = new EffectComposer(renderer);
+      const renderPass = new RenderPass(scene, camera);
+      composer.addPass(renderPass);
+
+      // UnrealBloomPass: threshold 0.96 (prevents metal glow), strength 0.10, radius 0.20
+      const bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(width, height),
+        0.10,
+        0.20,
+        0.96
+      );
+      bloomPass.enabled = bloomEnabled;
+      bloomPassRef.current = bloomPass;
+      composer.addPass(bloomPass);
+
+      const outputPass = new OutputPass();
+      composer.addPass(outputPass);
+      composerRef.current = composer;
+    } catch (err) {
+      console.warn('Post-processing fallback to direct render:', err);
+    }
 
     const handleResize = () => {
       if (!mountRef.current || !renderer || !camera) return;
@@ -180,6 +238,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+      if (composerRef.current) {
+        composerRef.current.setSize(w, h);
+      }
     };
     window.addEventListener('resize', handleResize);
 
@@ -209,17 +270,18 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         const easeT = 0.5 - 0.5 * Math.cos(t * Math.PI);
 
         camera.position.lerpVectors(transitionRef.current.startPos, transitionRef.current.endPos, easeT);
-        cameraTargetRef.current.lerpVectors(
+        controls.target.lerpVectors(
           transitionRef.current.startTarget,
           transitionRef.current.endTarget,
           easeT
         );
-        camera.lookAt(cameraTargetRef.current);
 
         if (t >= 1) {
           transitionRef.current.active = false;
         }
       } else if (cameraMode === 'walkthrough') {
+        // First Person Walkthrough
+        controls.enabled = false;
         const speed = 2.4 * delta;
         const forward = new THREE.Vector3(
           -Math.sin(fpYawRef.current),
@@ -255,6 +317,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           -Math.cos(fpYawRef.current) * Math.cos(fpPitchRef.current)
         );
         camera.lookAt(fpPosRef.current.clone().add(lookDir));
+      } else {
+        controls.enabled = true;
+        controls.update(); // smooth damping
       }
 
       // 2. Door Sliding Animation
@@ -291,7 +356,31 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         posAttr.needsUpdate = true;
       }
 
-      renderer.render(scene, camera);
+      // 4. CIP Wash Water Spray Simulation Particles
+      if (room.cipSprayGroup && room.cipSprayGroup.visible) {
+        room.cipSprayGroup.children.forEach((child) => {
+          if (child instanceof THREE.Points) {
+            const posAttr = child.geometry.attributes.position as THREE.BufferAttribute;
+            const count = posAttr.count;
+            for (let i = 0; i < count; i++) {
+              let y = posAttr.getY(i);
+              y -= delta * 1.8;
+              if (y < 1.35) {
+                y = 2.65 - Math.random() * 0.15;
+              }
+              posAttr.setY(i, y);
+            }
+            posAttr.needsUpdate = true;
+          }
+        });
+      }
+
+      // Render via Composer with Bloom or standard fallback
+      if (composerRef.current) {
+        composerRef.current.render();
+      } else {
+        renderer.render(scene, camera);
+      }
     };
 
     frameId = requestAnimationFrame(animate);
@@ -316,7 +405,11 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     if (onCaptureScreenshotRef) {
       onCaptureScreenshotRef(() => {
-        renderer.render(scene, camera);
+        if (composerRef.current) {
+          composerRef.current.render();
+        } else {
+          renderer.render(scene, camera);
+        }
         const link = document.createElement('a');
         link.download = `ArchViz_UE5_Sala_Limpa_${new Date().toISOString().slice(0, 10)}.png`;
         link.href = renderer.domElement.toDataURL('image/png');
@@ -329,7 +422,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      controls.dispose();
       renderer.dispose();
+      pmremGenerator.dispose();
+      roomEnv.dispose();
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
@@ -343,6 +439,20 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     }
   }, [isTapActive]);
 
+  // Sync CIP Wash Simulation Active State
+  useEffect(() => {
+    if (roomMeshesRef.current) {
+      roomMeshesRef.current.setCipActive(isCipActive);
+    }
+  }, [isCipActive]);
+
+  // Sync Hotspots Visibility
+  useEffect(() => {
+    if (hotspotsGroupRef.current) {
+      hotspotsGroupRef.current.visible = showHotspots;
+    }
+  }, [showHotspots]);
+
   // Sync Wall Visibility Mode
   useEffect(() => {
     if (roomMeshesRef.current) {
@@ -350,7 +460,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     }
   }, [wallVisibility]);
 
-  // Update Materials / Tone / Finishes / Render Mode
+  // Update Materials / Tone / Finishes / Render Mode / Gloss
   useEffect(() => {
     if (!roomMeshesRef.current) return;
     roomMeshesRef.current.updateMaterials({
@@ -358,8 +468,23 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       floorColor,
       steelFinish,
       renderMode,
+      glossLevel,
     });
-  }, [marbleTone, floorColor, steelFinish, renderMode]);
+  }, [marbleTone, floorColor, steelFinish, renderMode, glossLevel]);
+
+  // Update Exposure Dynamically
+  useEffect(() => {
+    if (rendererRef.current) {
+      rendererRef.current.toneMappingExposure = exposure;
+    }
+  }, [exposure]);
+
+  // Update Bloom Pass Toggle
+  useEffect(() => {
+    if (bloomPassRef.current) {
+      bloomPassRef.current.enabled = bloomEnabled;
+    }
+  }, [bloomEnabled]);
 
   // Update Dimensions Visibility
   useEffect(() => {
@@ -367,53 +492,67 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     roomMeshesRef.current.dimensionGroup.visible = showDimensions;
   }, [showDimensions]);
 
-  // Update Lighting Presets with balanced rich contrast
+  // Update Lighting Presets with balanced, realistic hospital illumination
   useEffect(() => {
     if (!sceneRef.current || !rendererRef.current || !roomMeshesRef.current) return;
     const scene = sceneRef.current;
-    const lights = roomMeshesRef.current.ceilingLights;
+    const spots = roomMeshesRef.current.ceilingLights;
+    const fill = roomMeshesRef.current.fillLight;
 
     if (lightingPreset === 'cleanroom_1000lux') {
-      rendererRef.current.toneMappingExposure = 1.05;
+      // "Inspeção Técnica (1000 Lux)" - Crisp neutral white without harsh blinding glare
+      rendererRef.current.toneMappingExposure = exposure * 1.05;
       scene.background = new THREE.Color(0x0f172a);
-      lights.forEach((l) => {
-        l.color.setHex(0xfaf5ee);
-        l.intensity = 0.95;
+      spots.forEach((sp) => {
+        sp.color.setHex(0xf8fafc);
+        sp.intensity = 1.35;
       });
+      fill.color.setHex(0xdbeafe);
+      fill.intensity = 0.32;
     } else if (lightingPreset === 'daylight') {
-      rendererRef.current.toneMappingExposure = 0.92;
-      scene.background = new THREE.Color(0x0a0f1d);
-      lights.forEach((l) => {
-        l.color.setHex(0xfff7ed);
-        l.intensity = 0.65;
+      // "Modo Diurno Hospitalar" - Soft, pleasant natural cleanroom daylight
+      rendererRef.current.toneMappingExposure = exposure;
+      scene.background = new THREE.Color(0x0a101d);
+      spots.forEach((sp) => {
+        sp.color.setHex(0xfff7ed);
+        sp.intensity = 1.05;
       });
+      fill.color.setHex(0xfef3c7);
+      fill.intensity = 0.28;
     } else if (lightingPreset === 'uvc_sanitization') {
-      rendererRef.current.toneMappingExposure = 0.85;
+      // "Desinfecção UV-C" - Deep ultraviolet glow with moody shadows
+      rendererRef.current.toneMappingExposure = exposure * 0.9;
       scene.background = new THREE.Color(0x090314);
-      lights.forEach((l) => {
-        l.color.setHex(0x9333ea);
-        l.intensity = 1.4;
+      spots.forEach((sp) => {
+        sp.color.setHex(0x7c3aed);
+        sp.intensity = 1.8;
       });
+      fill.color.setHex(0x4338ca);
+      fill.intensity = 0.5;
     } else if (lightingPreset === 'standby') {
-      rendererRef.current.toneMappingExposure = 0.7;
-      scene.background = new THREE.Color(0x07090e);
-      lights.forEach((l, i) => {
-        l.color.setHex(0xfde047);
-        l.intensity = i % 2 === 0 ? 0.45 : 0.04;
+      // "Modo Standby Noturno"
+      rendererRef.current.toneMappingExposure = exposure * 0.75;
+      scene.background = new THREE.Color(0x050810);
+      spots.forEach((sp, i) => {
+        sp.color.setHex(0xfde047);
+        sp.intensity = i % 2 === 0 ? 0.6 : 0.05;
       });
+      fill.color.setHex(0x1e293b);
+      fill.intensity = 0.15;
     }
-  }, [lightingPreset]);
+  }, [lightingPreset, exposure]);
 
   // Camera Preset Transitions
   useEffect(() => {
-    if (!activePreset || !cameraRef.current) return;
+    if (!activePreset || !cameraRef.current || !controlsRef.current) return;
     const camera = cameraRef.current;
+    const controls = controlsRef.current;
 
     transitionRef.current = {
       active: true,
       startPos: camera.position.clone(),
       endPos: new THREE.Vector3(...activePreset.position),
-      startTarget: cameraTargetRef.current.clone(),
+      startTarget: controls.target.clone(),
       endTarget: new THREE.Vector3(...activePreset.target),
       progress: 0,
     };
@@ -442,19 +581,19 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
   // Top Ortho Camera Switch
   useEffect(() => {
-    if (cameraMode === 'top' && cameraRef.current) {
+    if (cameraMode === 'top' && cameraRef.current && controlsRef.current) {
       transitionRef.current = {
         active: true,
         startPos: cameraRef.current.position.clone(),
         endPos: new THREE.Vector3(-0.3, 9.5, 0.01),
-        startTarget: cameraTargetRef.current.clone(),
+        startTarget: controlsRef.current.target.clone(),
         endTarget: new THREE.Vector3(-0.3, 0, 0),
         progress: 0,
       };
     }
   }, [cameraMode]);
 
-  // Pointer Interaction Handlers (Orbit, Shift Pan, First Person, Measure)
+  // Pointer Interaction Handlers
   const handlePointerDown = (e: React.PointerEvent) => {
     isPointerDownRef.current = true;
     previousPointerPosRef.current = { x: e.clientX, y: e.clientY };
@@ -466,8 +605,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     const deltaY = e.clientY - previousPointerPosRef.current.y;
     previousPointerPosRef.current = { x: e.clientX, y: e.clientY };
 
-    // 5. SHIFT KEY CAMERA PANNING (Horizontal & Vertical Move)
-    // "adicione a função para eu apertar a tecla "shift" no teclado, eu consida mover a camera horizontalmente e verticalmente."
+    // Shift Key Camera Pan (Horizontal & Vertical move)
     const isPanMode =
       e.shiftKey ||
       isShiftRef.current ||
@@ -476,18 +614,17 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       e.buttons === 2 ||
       e.buttons === 4;
 
-    if (isPanMode) {
-      // Local camera axes
+    if (isPanMode && controlsRef.current) {
       const right = new THREE.Vector3().setFromMatrixColumn(cameraRef.current.matrix, 0);
       const up = new THREE.Vector3().setFromMatrixColumn(cameraRef.current.matrix, 1);
 
-      // Pan factor proportional to camera zoom distance
-      const panSpeed = 0.0022 * Math.max(1.5, sphericalRef.current.radius);
+      const dist = cameraRef.current.position.distanceTo(controlsRef.current.target);
+      const panSpeed = 0.0018 * Math.max(1.5, dist);
       const panOffset = new THREE.Vector3()
         .addScaledVector(right, -deltaX * panSpeed)
         .addScaledVector(up, deltaY * panSpeed);
 
-      cameraTargetRef.current.add(panOffset);
+      controlsRef.current.target.add(panOffset);
       cameraRef.current.position.add(panOffset);
 
       if (cameraMode === 'walkthrough') {
@@ -500,24 +637,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       fpYawRef.current += deltaX * 0.0035;
       fpPitchRef.current -= deltaY * 0.0035;
       fpPitchRef.current = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, fpPitchRef.current));
-    } else if (cameraMode === 'orbit') {
-      sphericalRef.current.theta -= deltaX * 0.006;
-      sphericalRef.current.phi -= deltaY * 0.006;
-      sphericalRef.current.phi = Math.max(0.15, Math.min(Math.PI / 2.1, sphericalRef.current.phi));
-
-      const { radius, theta, phi } = sphericalRef.current;
-      const target = cameraTargetRef.current;
-
-      cameraRef.current.position.set(
-        target.x + radius * Math.sin(phi) * Math.sin(theta),
-        target.y + radius * Math.cos(phi),
-        target.z + radius * Math.sin(phi) * Math.cos(theta)
-      );
-      cameraRef.current.lookAt(target);
     }
   };
 
-  const handlePointerUp = (e: React.PointerEvent) => {
+  const handlePointerUp = () => {
     isPointerDownRef.current = false;
   };
 
@@ -532,6 +655,19 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(mouse, cameraRef.current);
 
+    // 1. Check Hotspots click first
+    if (showHotspots && hotspotsGroupRef.current) {
+      const hsHits = raycaster.intersectObjects(hotspotsGroupRef.current.children, true);
+      if (hsHits.length > 0) {
+        const hsObj = hsHits[0].object;
+        if (hsObj.userData && hsObj.userData.equipmentId) {
+          onSelectEquipment(hsObj.userData.equipmentId);
+          return;
+        }
+      }
+    }
+
+    // 2. Measuring Tool
     if (isMeasuring) {
       const intersects = raycaster.intersectObjects(sceneRef.current.children, true);
       if (intersects.length > 0) {
@@ -559,6 +695,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       return;
     }
 
+    // 3. Equipment Selection Picking
     const interactiveDict = roomMeshesRef.current.interactiveObjects;
     let clickedId: string | null = null;
 
@@ -574,24 +711,11 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       onToggleDoor();
     } else if (clickedId === 'marble_counter_sink') {
       onToggleTap();
+    } else if (clickedId === 'overhead_piping') {
+      onToggleCip();
     }
 
     onSelectEquipment(clickedId);
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    if (cameraMode !== 'orbit' || !cameraRef.current) return;
-    sphericalRef.current.radius += e.deltaY * 0.005;
-    sphericalRef.current.radius = Math.max(2.0, Math.min(16, sphericalRef.current.radius));
-
-    const { radius, theta, phi } = sphericalRef.current;
-    const target = cameraTargetRef.current;
-    cameraRef.current.position.set(
-      target.x + radius * Math.sin(phi) * Math.sin(theta),
-      target.y + radius * Math.cos(phi),
-      target.z + radius * Math.sin(phi) * Math.cos(theta)
-    );
-    cameraRef.current.lookAt(target);
   };
 
   return (
@@ -605,7 +729,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
       onClick={handleClick}
-      onWheel={handleWheel}
       onContextMenu={(e) => e.preventDefault()}
       tabIndex={0}
     >

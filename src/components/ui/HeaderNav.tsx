@@ -46,7 +46,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-sm font-semibold tracking-wide text-slate-100">
-              SALA DE LAVAGEM DE BINS 1000L & CENTRAL HOSPITALAR
+              SALA DE LAVAGEM DE BINS 1000L
             </h1>
             <span className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-widest bg-emerald-950/70 border border-emerald-500/30 text-emerald-400 rounded">
               Lumen Realtime

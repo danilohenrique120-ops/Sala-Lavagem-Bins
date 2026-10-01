@@ -10,10 +10,19 @@ import {
   EyeOff,
   Ruler,
   Crosshair,
+  Waves,
+  MapPin,
 } from 'lucide-react';
 import { CameraMode, CameraPreset, WallVisibility } from '../../types/archviz';
 
 export const CAMERA_PRESETS: CameraPreset[] = [
+  {
+    id: 'reference_render',
+    label: 'Vista da Foto de Referência',
+    position: [0.65, 3.35, 5.05],
+    target: [-0.25, 1.15, -0.45],
+    fov: 48,
+  },
   {
     id: 'overview',
     label: 'Visão Geral 3D',
@@ -31,6 +40,12 @@ export const CAMERA_PRESETS: CameraPreset[] = [
     label: 'Tubulações Água & Ar',
     position: [-1.1, 2.4, 0.0],
     target: [-2.55, 2.5, 0.0],
+  },
+  {
+    id: 'floor_drain',
+    label: 'Canaleta Dreno Inox',
+    position: [-1.4, 1.5, 0.0],
+    target: [-2.55, 0.1, 0.0],
   },
   {
     id: 'marble_counter',
@@ -67,6 +82,10 @@ interface CameraToolbarProps {
   onToggleDoor: () => void;
   isTapActive: boolean;
   onToggleTap: () => void;
+  isCipActive: boolean;
+  onToggleCip: () => void;
+  showHotspots?: boolean;
+  onToggleHotspots?: () => void;
   wallVisibility: WallVisibility;
   onCycleWallVisibility: () => void;
   isMeasuring: boolean;
@@ -83,6 +102,10 @@ export const CameraToolbar: React.FC<CameraToolbarProps> = ({
   onToggleDoor,
   isTapActive,
   onToggleTap,
+  isCipActive,
+  onToggleCip,
+  showHotspots,
+  onToggleHotspots,
   wallVisibility,
   onCycleWallVisibility,
   isMeasuring,
@@ -120,7 +143,7 @@ export const CameraToolbar: React.FC<CameraToolbarProps> = ({
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
-            title="Órbita 360 Livre"
+            title="Órbita 360 Livre (Damping Ativo)"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Órbita</span>
@@ -174,6 +197,20 @@ export const CameraToolbar: React.FC<CameraToolbarProps> = ({
 
         <div className="w-[1px] h-6 bg-slate-800 mx-1" />
 
+        {/* Testar Lavagem CIP Simulation Toggle */}
+        <button
+          onClick={onToggleCip}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors border ${
+            isCipActive
+              ? 'bg-sky-950/90 border-sky-400 text-sky-300 shadow-md animate-pulse'
+              : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-300'
+          }`}
+          title="Simulação de Lavagem CIP: ativa jatos pressurizados d'água das tubulações para dentro dos Bins 1000L"
+        >
+          <Waves className={`w-3.5 h-3.5 ${isCipActive ? 'text-sky-400 animate-bounce' : 'text-slate-400'}`} />
+          <span>{isCipActive ? 'Lavagem CIP Ativa' : 'Testar Lavagem CIP'}</span>
+        </button>
+
         {/* Wall Visibility Cutaway Program Toggle */}
         <button
           onClick={onCycleWallVisibility}
@@ -184,7 +221,7 @@ export const CameraToolbar: React.FC<CameraToolbarProps> = ({
               ? 'bg-indigo-950/70 border-indigo-500/70 text-indigo-300'
               : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-300'
           }`}
-          title="Ocultar paredes para visualizar apenas o interior sem obstáculos"
+          title="Ocultar paredes para visualização interna sem obstáculos"
         >
           {wallVisibility === 'all' ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5 text-purple-400" />}
           <span>{getWallLabel()}</span>
@@ -198,10 +235,10 @@ export const CameraToolbar: React.FC<CameraToolbarProps> = ({
               ? 'bg-sky-950/80 border-sky-400 text-sky-200 shadow-sm'
               : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-400'
           }`}
-          title="Ligar ou desligar a torneira cirúrgica"
+          title="Ligar ou desligar a torneira hospitalar"
         >
           <Droplet className={`w-3.5 h-3.5 ${isTapActive ? 'text-sky-400 fill-sky-400 animate-pulse' : 'text-slate-500'}`} />
-          <span>{isTapActive ? 'Água Ligada' : 'Água Desligada'}</span>
+          <span>{isTapActive ? 'Pia Ligada' : 'Pia Desligada'}</span>
         </button>
 
         {/* Sliding Door Toggle */}
