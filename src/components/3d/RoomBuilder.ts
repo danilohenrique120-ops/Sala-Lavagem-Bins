@@ -242,7 +242,7 @@ export class RoomBuilder {
     floor.receiveShadow = true;
     root.add(floor);
 
-    // Industrial Yellow Safety Boundary Lines (matching image.png)
+    // Industrial Yellow Safety Boundary Lines (Polyurethane Satin Finish)
     const yellowLineMat = new THREE.MeshStandardMaterial({
       color: 0xfacc15,
       roughness: 0.30,
@@ -251,32 +251,105 @@ export class RoomBuilder {
       envMapIntensity: 0.3,
     });
 
-    const lineThickness = 0.07;
-    const cornerX = -0.65;
-    const frontZ = 1.65;
+    const lineThickness = 0.08;
 
-    // Front boundary stripe (from left wall to corner)
-    const frontStripeW = cornerX - (-halfW);
-    const frontStripe = new THREE.Mesh(
-      new THREE.PlaneGeometry(frontStripeW, lineThickness),
-      yellowLineMat
+    // Helper to create an individual, independently editable yellow demarcation stripe
+    const createDemarcationStripe = (
+      name: string,
+      length: number,
+      orientation: 'x' | 'z',
+      centerX: number,
+      centerZ: number
+    ) => {
+      const g = new THREE.Group();
+      g.name = name;
+      g.position.set(centerX, 0.0025, centerZ);
+
+      const stripeW = orientation === 'x' ? length : lineThickness;
+      const stripeL = orientation === 'z' ? length : lineThickness;
+
+      const stripeMesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(stripeW, stripeL),
+        yellowLineMat
+      );
+      stripeMesh.rotation.x = -Math.PI / 2;
+      stripeMesh.receiveShadow = true;
+      g.add(stripeMesh);
+
+      // Edge bevel contrast borders for high visibility cGMP floor markings
+      const borderMat = new THREE.MeshBasicMaterial({ color: 0xeab308, transparent: true, opacity: 0.85 });
+      const borderGeo = new THREE.PlaneGeometry(
+        orientation === 'x' ? length : 0.006,
+        orientation === 'z' ? length : 0.006
+      );
+      const b1 = new THREE.Mesh(borderGeo, borderMat);
+      b1.rotation.x = -Math.PI / 2;
+      b1.position.set(
+        orientation === 'z' ? -lineThickness / 2 + 0.003 : 0,
+        0.0004,
+        orientation === 'x' ? -lineThickness / 2 + 0.003 : 0
+      );
+      const b2 = new THREE.Mesh(borderGeo, borderMat);
+      b2.rotation.x = -Math.PI / 2;
+      b2.position.set(
+        orientation === 'z' ? lineThickness / 2 - 0.003 : 0,
+        0.0004,
+        orientation === 'x' ? lineThickness / 2 - 0.003 : 0
+      );
+      g.add(b1, b2);
+
+      return g;
+    };
+
+    // --- SEPARATE DEMARCATION STRIPES FOLLOWING THE RED PATH ---
+    // "exclua essa demarcação no chao amarela e faça outra demarcação amarela seguindo esse sentido da linha vermelha na imagem, mas faça faixas separadas para eu conseguir editar"
+
+    // 1. Faixa Lateral Direita da Bancada (along Z, between bench right edge and blue lockers)
+    const demCounterRight = createDemarcationStripe(
+      'Faixa_Lateral_Direita_Bancada',
+      1.24,
+      'z',
+      2.38,
+      -1.77
     );
-    frontStripe.rotation.x = -Math.PI / 2;
-    frontStripe.position.set(-halfW + frontStripeW / 2, 0.002, frontZ);
-    root.add(frontStripe);
+    root.add(demCounterRight);
+    interactiveObjects['demarcation_counter_right'] = demCounterRight;
 
-    // Side boundary stripe (from frontZ to rear wall)
-    const sideStripeL = frontZ - (-halfD);
-    const sideStripe = new THREE.Mesh(
-      new THREE.PlaneGeometry(lineThickness, sideStripeL),
-      yellowLineMat
+    // 2. Faixa Frontal da Bancada (along X, in front of the 3.00m counter)
+    const demCounterFront = createDemarcationStripe(
+      'Faixa_Frontal_Bancada',
+      3.23,
+      'x',
+      0.765,
+      -1.15
     );
-    sideStripe.rotation.x = -Math.PI / 2;
-    sideStripe.position.set(cornerX, 0.002, -halfD + sideStripeL / 2);
-    root.add(sideStripe);
+    root.add(demCounterFront);
+    interactiveObjects['demarcation_counter_front'] = demCounterFront;
+    interactiveObjects['floor_demarcation'] = demCounterFront; // Legacy alias
 
-    // --- 2. SANITARY TRENCH DRAIN INOX (Below Bins) ---
-    // "Adicione no piso, logo abaixo dos bins, uma grelha/canaleta linear de dreno em aço inox para escoamento da lavagem."
+    // 3. Faixa Divisória Baia dos Bins (along Z, between bins/platform and dry room corridor)
+    const demBayDivider = createDemarcationStripe(
+      'Faixa_Divisoria_Baia_Bins',
+      2.80,
+      'z',
+      -0.85,
+      0.25
+    );
+    root.add(demBayDivider);
+    interactiveObjects['demarcation_bay_divider'] = demBayDivider;
+
+    // 4. Faixa Corredor Frontal / Porta (along X, in front towards 3.50m door)
+    const demFrontCorridor = createDemarcationStripe(
+      'Faixa_Corredor_Frontal_Porta',
+      1.50,
+      'x',
+      -0.10,
+      1.65
+    );
+    root.add(demFrontCorridor);
+    interactiveObjects['demarcation_front_corridor'] = demFrontCorridor;
+
+    // --- 2. SANITARY TRENCH DRAIN INOX (Below Bins - Editable) ---
     const drainGroup = new THREE.Group();
     drainGroup.name = 'Stainless_Floor_Trench_Drain';
 
@@ -285,11 +358,12 @@ export class RoomBuilder {
     const drainD = 0.06;
     const drainX = binZoneX - 0.2;
     const drainZ = binZoneZ;
+    drainGroup.position.set(drainX, 0, drainZ);
 
-    // Trench recessed trough
+    // Trench recessed trough (relative to group center)
     const troughGeo = new THREE.BoxGeometry(drainW, drainD, drainL);
     const troughMesh = new THREE.Mesh(troughGeo, darkSteelMaterial);
-    troughMesh.position.set(drainX, -drainD / 2 + 0.001, drainZ);
+    troughMesh.position.set(0, -drainD / 2 + 0.001, 0);
     drainGroup.add(troughMesh);
 
     // Perforated stainless drain grating
@@ -297,14 +371,14 @@ export class RoomBuilder {
       new THREE.BoxGeometry(drainW, 0.015, drainL),
       stainlessSteelMaterial
     );
-    grateFrame.position.set(drainX, 0.005, drainZ);
+    grateFrame.position.set(0, 0.005, 0);
     drainGroup.add(grateFrame);
 
     // Grating cross slots simulation
     const slotMat = darkSteelMaterial;
     for (let s = -drainL / 2 + 0.05; s < drainL / 2 - 0.04; s += 0.08) {
       const slot = new THREE.Mesh(new THREE.BoxGeometry(drainW - 0.04, 0.018, 0.025), slotMat);
-      slot.position.set(drainX, 0.006, drainZ + s);
+      slot.position.set(0, 0.006, s);
       drainGroup.add(slot);
     }
     root.add(drainGroup);
@@ -980,26 +1054,26 @@ export class RoomBuilder {
       cipSprayGroup.visible = active;
     };
 
-    // --- 10. MARBLE COUNTERTOP WITH 15CM BACKSPLASH & DEEP DOUBLE HOSPITAL SINK ---
-    // "Tampo da bancada com textura de mármore claro (clearcoat: 0.8, roughness: 0.15), frontão/espelho de parede alto (15cm) e cuba embutida profunda em aço inox com ralo e torneira hospitalar com alavanca longa médica (acionamento clínico de cotovelo)."
+    // --- 10. MARBLE COUNTERTOP (3.00M) WITH 15CM BACKSPLASH & DEEP SINK AT CENTER ---
+    // "bancada com 3 metros de largura, com a quantidade de portas adequadas. Mude a posição da pia e torneira para o centro da bancada. pia com a bandeija mais funda."
     const counterGroup = new THREE.Group();
     counterGroup.name = 'Marble_Counter_Hospital_Sink';
 
-    const counterStartX = -halfW;
-    const counterEndX = 2.15;
-    const counterWidth = counterEndX - counterStartX; // ~5.77m
-    const counterCenterX = (counterStartX + counterEndX) / 2;
-    const counterDepth = 0.72;
-    const counterH = 0.88;
-    const counterZ = -halfD + counterDepth / 2 + 0.01;
+    const counterWidth = 3.00; // Exactly 3.00m width per user request
+    const counterDepth = 0.72; // 0.72m depth
+    const counterH = 0.88;     // 0.88m height
+    const counterCenterX = 0.85; // Clean alignment between demarcation (-0.65) and lockers (2.35)
+    const counterCenterZ = -halfD + counterDepth / 2 + 0.01;
 
-    // Polished Marble Slab (Clearcoat 0.8)
+    counterGroup.position.set(counterCenterX, 0, counterCenterZ);
+
+    // Polished Marble Slab (Clearcoat 0.8) - 3.00m wide
     const slabThickness = 0.06;
     const marbleSlab = new THREE.Mesh(
       new THREE.BoxGeometry(counterWidth, slabThickness, counterDepth),
       marbleMaterial
     );
-    marbleSlab.position.set(counterCenterX, counterH - slabThickness / 2, counterZ);
+    marbleSlab.position.set(0, counterH - slabThickness / 2, 0);
     marbleSlab.castShadow = true;
     marbleSlab.receiveShadow = true;
     counterGroup.add(marbleSlab);
@@ -1010,138 +1084,189 @@ export class RoomBuilder {
       new THREE.BoxGeometry(counterWidth, splashH, 0.03),
       marbleMaterial
     );
-    splashMesh.position.set(counterCenterX, counterH + splashH / 2, -halfD + 0.015);
+    splashMesh.position.set(0, counterH + splashH / 2, -counterDepth / 2 + 0.015);
     counterGroup.add(splashMesh);
 
-    // Marble Right End Cap
-    const endCap = new THREE.Mesh(
+    // Marble Left & Right End Caps (Acabamentos laterais)
+    const endCapL = new THREE.Mesh(
       new THREE.BoxGeometry(0.04, counterH, counterDepth),
       marbleMaterial
     );
-    endCap.position.set(counterEndX - 0.02, counterH / 2, counterZ);
-    counterGroup.add(endCap);
+    endCapL.position.set(-counterWidth / 2 + 0.02, counterH / 2, 0);
+    const endCapR = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, counterH, counterDepth),
+      marbleMaterial
+    );
+    endCapR.position.set(counterWidth / 2 - 0.02, counterH / 2, 0);
+    counterGroup.add(endCapL, endCapR);
 
-    // Stainless Sanitary Base Cabinet
+    // Stainless Sanitary Base Cabinet (2.96m wide)
     const baseCabinetH = counterH - slabThickness;
     const baseCabinet = new THREE.Mesh(
       new THREE.BoxGeometry(counterWidth - 0.04, baseCabinetH, counterDepth - 0.04),
       stainlessSteelMaterial
     );
-    baseCabinet.position.set(counterCenterX - 0.02, baseCabinetH / 2, counterZ - 0.01);
+    baseCabinet.position.set(0, baseCabinetH / 2, -0.01);
     baseCabinet.castShadow = true;
     baseCabinet.receiveShadow = true;
     counterGroup.add(baseCabinet);
 
-    // 6 Blue Cabinet Doors & Horizontal Dark Handles (Matching image.png exactly)
+    // Recessed sanitary plinth / toe kick (rodapé sanitário recuado 8cm)
+    const plinth = new THREE.Mesh(
+      new THREE.BoxGeometry(counterWidth - 0.08, 0.09, counterDepth - 0.12),
+      darkSteelMaterial
+    );
+    plinth.position.set(0, 0.045, -0.03);
+    counterGroup.add(plinth);
+
+    // 6 Cabinet Doors (3 symmetric double-door pairs of ~0.49m each, perfectly proportioned for 3.00m)
     const numDoors = 6;
     const doorSegW = (counterWidth - 0.08) / numDoors;
+    const cabDoorH = baseCabinetH - 0.06;
     for (let d = 0; d < numDoors; d++) {
-      const doorX = counterStartX + (d + 0.5) * doorSegW + 0.04;
+      const doorX = -counterWidth / 2 + 0.04 + (d + 0.5) * doorSegW;
 
-      // Blue Door Panel
+      // Hospital Cleanroom Blue Door Panel (with subtle beveled edge)
       const doorMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(doorSegW - 0.015, baseCabinetH - 0.06, 0.024),
+        new THREE.BoxGeometry(doorSegW - 0.015, cabDoorH, 0.024),
         blueLockerDoorMat
       );
-      doorMesh.position.set(doorX, baseCabinetH / 2 + 0.01, counterZ + counterDepth / 2 + 0.012);
+      doorMesh.position.set(doorX, baseCabinetH / 2 + 0.01, counterDepth / 2 + 0.012);
       doorMesh.castShadow = true;
       counterGroup.add(doorMesh);
 
-      // Dark Horizontal Pull Handle
+      // Stainless Steel Horizontal Pull Handle
       const hMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(0.12, 0.018, 0.022),
+        new THREE.BoxGeometry(0.14, 0.018, 0.022),
         darkSteelMaterial
       );
-      hMesh.position.set(doorX, baseCabinetH * 0.72, counterZ + counterDepth / 2 + 0.026);
+      hMesh.position.set(doorX, baseCabinetH * 0.72, counterDepth / 2 + 0.026);
       counterGroup.add(hMesh);
+
+      // Vertical door gap seam for realistic CAD paneling
+      if (d > 0) {
+        const seam = new THREE.Mesh(
+          new THREE.BoxGeometry(0.004, cabDoorH, 0.005),
+          darkSteelMaterial
+        );
+        seam.position.set(-counterWidth / 2 + 0.04 + d * doorSegW, baseCabinetH / 2 + 0.01, counterDepth / 2 + 0.025);
+        counterGroup.add(seam);
+      }
     }
 
-    // Wide Inset Stainless Single Wash Basin (Matching image.png)
-    const sinkX = 0.65;
-    const sinkRimW = 1.25;
-    const sinkRimD = 0.52;
-    const sinkRimH = 0.02;
+    // --- DEEP INSET SANITARY HOSPITAL SINK (CENTERED ON COUNTER) ---
+    // "preciso que faça uma pia com a bandeija mais funda... Mude a posição da pia e torneira para o centro da bancada"
+    const sinkX = 0; // Exactly in the center of the 3.00m counter!
+    const sinkZ = 0.02;
 
+    const sinkRimW = 1.30;
+    const sinkRimD = 0.56;
+    const sinkRimH = 0.025;
+
+    // Stainless top perimeter rim with beveled anti-drip hygienic lip
     const sinkRimMesh = new THREE.Mesh(
       new THREE.BoxGeometry(sinkRimW, sinkRimH, sinkRimD),
       stainlessSteelMaterial
     );
-    sinkRimMesh.position.set(sinkX, counterH + sinkRimH / 2, counterZ);
+    sinkRimMesh.position.set(sinkX, counterH + sinkRimH / 2, sinkZ);
     counterGroup.add(sinkRimMesh);
 
-    const bowlW = 1.12;
-    const bowlD = 0.44;
-    const bowlDepth = 0.25;
+    // Deeper Basin (Bandeja Mais Funda: 0.40m = 40cm depth!)
+    const bowlW = 1.18;
+    const bowlD = 0.48;
+    const bowlDepth = 0.40; // Extra deep 40cm wash basin!
 
     const bowl = new THREE.Mesh(
       new THREE.BoxGeometry(bowlW, bowlDepth, bowlD),
       stainlessSteelMaterial
     );
-    bowl.position.set(sinkX, counterH - bowlDepth / 2 + 0.01, counterZ);
+    bowl.position.set(sinkX, counterH - bowlDepth / 2 + 0.01, sinkZ);
+    bowl.castShadow = true;
+    bowl.receiveShadow = true;
     counterGroup.add(bowl);
 
-    // Single Central Stainless Perforated Strainer
-    const strainer = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.05, 0.05, 0.01, 24),
+    // Inner bottom sloping hygienic bevel for total water drainage
+    const innerBottom = new THREE.Mesh(
+      new THREE.BoxGeometry(bowlW - 0.04, 0.015, bowlD - 0.04),
+      stainlessSteelMaterial
+    );
+    innerBottom.position.set(sinkX, counterH - bowlDepth + 0.012, sinkZ);
+    counterGroup.add(innerBottom);
+
+    // Overflow safety drain slot (ladrão sanitário)
+    const overflowSlot = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.015, 0.008),
       darkSteelMaterial
     );
-    strainer.position.set(sinkX, counterH - bowlDepth + 0.015, counterZ);
+    overflowSlot.position.set(sinkX, counterH - 0.05, sinkZ - bowlD / 2 + 0.005);
+    counterGroup.add(overflowSlot);
+
+    // Single Central Stainless Perforated Strainer (ralo tipo cesto)
+    const strainer = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.055, 0.05, 0.015, 24),
+      darkSteelMaterial
+    );
+    strainer.position.set(sinkX, counterH - bowlDepth + 0.018, sinkZ);
     counterGroup.add(strainer);
 
+    // --- HOSPITAL CLINICAL GOOSENECK FAUCET (CENTERED) ---
     // Single Hospital Clinical Gooseneck Faucet with Dual Medical Elbow Levers
     const faucetGroup = new THREE.Group();
+    const faucetX = 0; // Centered
+    const faucetZ = sinkZ - 0.22; // Behind the centered basin
 
-    const baseRing = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.042, 0.018, 24), chromeFaucetMaterial);
-    baseRing.position.y = 0.009;
+    const baseRing = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.046, 0.02, 24), chromeFaucetMaterial);
+    baseRing.position.y = 0.01;
 
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.16, 24), chromeFaucetMaterial);
-    body.position.y = 0.08;
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.20, 24), chromeFaucetMaterial);
+    body.position.y = 0.10;
 
-    // Dual Medical Elbow Lever Handles (Left & Right)
-    const leverHubL = new THREE.Mesh(new THREE.SphereGeometry(0.02, 16, 16), chromeFaucetMaterial);
-    leverHubL.position.set(-0.06, 0.10, 0);
-    const leverArmL = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.16, 0.012), chromeFaucetMaterial);
-    leverArmL.position.set(-0.08, 0.17, 0);
-    leverArmL.rotation.z = 0.22;
+    // Dual Medical Elbow Lever Handles (Left & Right - Clinic contact-free operation)
+    const leverHubL = new THREE.Mesh(new THREE.SphereGeometry(0.022, 16, 16), chromeFaucetMaterial);
+    leverHubL.position.set(-0.065, 0.12, 0);
+    const leverArmL = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.18, 0.012), chromeFaucetMaterial);
+    leverArmL.position.set(-0.09, 0.19, 0);
+    leverArmL.rotation.z = 0.24;
 
-    const leverHubR = new THREE.Mesh(new THREE.SphereGeometry(0.02, 16, 16), chromeFaucetMaterial);
-    leverHubR.position.set(0.06, 0.10, 0);
-    const leverArmR = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.16, 0.012), chromeFaucetMaterial);
-    leverArmR.position.set(0.08, 0.17, 0);
-    leverArmR.rotation.z = -0.22;
+    const leverHubR = new THREE.Mesh(new THREE.SphereGeometry(0.022, 16, 16), chromeFaucetMaterial);
+    leverHubR.position.set(0.065, 0.12, 0);
+    const leverArmR = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.18, 0.012), chromeFaucetMaterial);
+    leverArmR.position.set(0.09, 0.19, 0);
+    leverArmR.rotation.z = -0.24;
 
-    // Tall curved swivel gooseneck spout
+    // Tall curved swivel gooseneck spout (elevated to easily fit deep containers)
     const spoutCurve = new THREE.QuadraticBezierCurve3(
-      new THREE.Vector3(0, 0.14, 0),
-      new THREE.Vector3(0, 0.32, 0.12),
-      new THREE.Vector3(0, 0.24, 0.22)
+      new THREE.Vector3(0, 0.16, 0),
+      new THREE.Vector3(0, 0.38, 0.14),
+      new THREE.Vector3(0, 0.28, 0.24)
     );
-    const spoutGeo = new THREE.TubeGeometry(spoutCurve, 24, 0.014, 16, false);
+    const spoutGeo = new THREE.TubeGeometry(spoutCurve, 24, 0.015, 16, false);
     const spout = new THREE.Mesh(spoutGeo, chromeFaucetMaterial);
 
-    const aerator = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.02, 16), darkSteelMaterial);
-    aerator.position.set(0, 0.23, 0.22);
+    const aerator = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.024, 16), darkSteelMaterial);
+    aerator.position.set(0, 0.27, 0.24);
 
     faucetGroup.add(baseRing, body, leverHubL, leverArmL, leverHubR, leverArmR, spout, aerator);
-    faucetGroup.position.set(sinkX, counterH, counterZ - 0.16);
+    faucetGroup.position.set(faucetX, counterH, faucetZ);
     counterGroup.add(faucetGroup);
 
-    // Water Stream & Splash
-    const streamH = 0.30;
+    // Water Stream & Splash (Centered and extending down into 40cm deep basin)
+    const streamDropTargetZ = faucetZ + 0.24;
+    const streamH = 0.44; // Extended stream to reach the 40cm deep floor of the basin
     const waterStreamGeo = new THREE.CylinderGeometry(0.01, 0.014, streamH, 16);
     const waterStreamMat = new THREE.MeshPhysicalMaterial({
       color: 0x93c5fd,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.82,
       roughness: 0.05,
       transmission: 0.92,
       ior: 1.33,
     });
     const waterStreamMesh = new THREE.Mesh(waterStreamGeo, waterStreamMat);
-    waterStreamMesh.position.set(sinkX, counterH + 0.23 - streamH / 2, counterZ - 0.16 + 0.22);
+    waterStreamMesh.position.set(sinkX, counterH + 0.27 - streamH / 2, streamDropTargetZ);
     counterGroup.add(waterStreamMesh);
 
-    const puddleGeo = new THREE.CircleGeometry(0.14, 24);
+    const puddleGeo = new THREE.CircleGeometry(0.16, 24);
     const puddleMat = new THREE.MeshStandardMaterial({
       color: 0x60a5fa,
       roughness: 0.05,
@@ -1151,23 +1276,23 @@ export class RoomBuilder {
     });
     const waterPuddleMesh = new THREE.Mesh(puddleGeo, puddleMat);
     waterPuddleMesh.rotation.x = -Math.PI / 2;
-    waterPuddleMesh.position.set(sinkX, counterH - bowlDepth + 0.016, counterZ);
+    waterPuddleMesh.position.set(sinkX, counterH - bowlDepth + 0.02, streamDropTargetZ);
     counterGroup.add(waterPuddleMesh);
 
-    const splashCount = 50;
+    const splashCount = 55;
     const splashGeo = new THREE.BufferGeometry();
     const splashPos = new Float32Array(splashCount * 3);
     for (let i = 0; i < splashCount; i++) {
-      splashPos[i * 3] = sinkX + (Math.random() - 0.5) * 0.10;
-      splashPos[i * 3 + 1] = counterH - bowlDepth + 0.02 + Math.random() * 0.12;
-      splashPos[i * 3 + 2] = counterZ + (Math.random() - 0.5) * 0.10;
+      splashPos[i * 3] = sinkX + (Math.random() - 0.5) * 0.12;
+      splashPos[i * 3 + 1] = counterH - bowlDepth + 0.025 + Math.random() * 0.14;
+      splashPos[i * 3 + 2] = streamDropTargetZ + (Math.random() - 0.5) * 0.12;
     }
     splashGeo.setAttribute('position', new THREE.BufferAttribute(splashPos, 3));
     const splashMat = new THREE.PointsMaterial({
       color: 0xbfdbfe,
-      size: 0.022,
+      size: 0.024,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.85,
     });
     const waterSplashParticles = new THREE.Points(splashGeo, splashMat);
     counterGroup.add(waterSplashParticles);
@@ -1266,68 +1391,407 @@ export class RoomBuilder {
     cornerLockers.position.set(2.88, 0, -halfD + 0.27);
     lockersGroup.add(cornerLockers);
 
-    // Bank B: Open Cleanroom Shelving Unit with 5 Blue Shelves and Sloped Top (matching image.png)
-    const createSlopedShelfUnit = (unitWidth: number, unitDepth: number, unitHeight: number) => {
-      const sGroup = new THREE.Group();
-
-      // Outer metallic chassis (sides and back)
-      const back = new THREE.Mesh(new THREE.BoxGeometry(unitWidth, unitHeight, 0.025), lockerBodyMat);
-      back.position.set(0, unitHeight / 2, -unitDepth / 2 + 0.012);
-      const sideL = new THREE.Mesh(new THREE.BoxGeometry(0.025, unitHeight, unitDepth), lockerBodyMat);
-      sideL.position.set(-unitWidth / 2 + 0.012, unitHeight / 2, 0);
-      const sideR = new THREE.Mesh(new THREE.BoxGeometry(0.025, unitHeight, unitDepth), lockerBodyMat);
-      sideR.position.set(unitWidth / 2 - 0.012, unitHeight / 2, 0);
-      sGroup.add(back, sideL, sideR);
-
-      // Slanted 30° cleanroom anti-dust top
-      const slantH = 0.26;
-      const slantShape = new THREE.Shape();
-      slantShape.moveTo(-unitDepth / 2, 0);
-      slantShape.lineTo(unitDepth / 2, 0);
-      slantShape.lineTo(-unitDepth / 2, slantH);
-      slantShape.closePath();
-      const slantMesh = new THREE.Mesh(
-        new THREE.ExtrudeGeometry(slantShape, { depth: unitWidth, bevelEnabled: false }),
-        lockerBodyMat
-      );
-      slantMesh.rotation.y = Math.PI / 2;
-      slantMesh.position.set(-unitWidth / 2, unitHeight, 0);
-      sGroup.add(slantMesh);
-
-      // 5 Vibrant Blue Horizontal Shelves
-      const numShelves = 5;
-      for (let i = 0; i < numShelves; i++) {
-        const shelfY = 0.12 + (i / (numShelves - 1)) * (unitHeight - 0.32);
-        const shelf = new THREE.Mesh(
-          new THREE.BoxGeometry(unitWidth - 0.05, 0.025, unitDepth - 0.03),
-          blueLockerDoorMat
-        );
-        shelf.position.set(0, shelfY, 0.01);
-        shelf.castShadow = true;
-        shelf.receiveShadow = true;
-        sGroup.add(shelf);
-      }
-
-      return sGroup;
-    };
-
-    const sideWallShelves = createSlopedShelfUnit(1.35, 0.48, 2.05);
-    sideWallShelves.rotation.y = -Math.PI / 2;
-    sideWallShelves.position.set(halfW - 0.26, 0, 0.65);
-    lockersGroup.add(sideWallShelves);
-
     root.add(lockersGroup);
     interactiveObjects['shelving_units'] = lockersGroup;
 
-    // Electrical Automation Command Panel on right wall
-    const elecPanel = new THREE.Group();
-    const pBox = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.65, 0.55), stainlessSteelMaterial);
-    pBox.position.set(halfW - 0.06, 1.6, -1.5);
-    const eStop = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.04, 16), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
-    eStop.rotation.z = Math.PI / 2;
-    eStop.position.set(halfW - 0.13, 1.6, -1.4);
-    elecPanel.add(pBox, eStop);
-    root.add(elecPanel);
+    // --- 11.5. MODULAR STAINLESS STEEL WHEEL STOPS / BUMPER RAILS (SEPARATE PER WALL) ---
+    // "adicione um bate-rodas de inox no rodapé das paredes, mas de forma separada para que seja possivel excluir de alguma parede se eu quiser"
+    const createBumperRailSegment = (
+      name: string,
+      length: number,
+      orientation: 'x' | 'z',
+      posX: number,
+      posZ: number
+    ) => {
+      const g = new THREE.Group();
+      g.name = name;
+      g.position.set(posX, 0, posZ);
+
+      const railRadius = 0.024; // Ø48mm sanitary stainless tube
+      const railH = 0.12;       // 12cm height
+      const halfL = length / 2;
+
+      // Main upper horizontal rail tube
+      const railGeo = new THREE.CylinderGeometry(railRadius, railRadius, length - 0.08, 20);
+      const railMesh = new THREE.Mesh(railGeo, stainlessSteelMaterial);
+      railMesh.castShadow = true;
+      railMesh.receiveShadow = true;
+
+      if (orientation === 'z') {
+        railMesh.rotation.x = Math.PI / 2;
+        railMesh.position.set(0, railH, 0);
+      } else {
+        railMesh.rotation.z = Math.PI / 2;
+        railMesh.position.set(0, railH, 0);
+      }
+      g.add(railMesh);
+
+      // Spherical sanitary domed end caps (prevents snagging of garments and hoses)
+      const capGeo = new THREE.SphereGeometry(railRadius, 16, 16);
+      const cap1 = new THREE.Mesh(capGeo, stainlessSteelMaterial);
+      const cap2 = new THREE.Mesh(capGeo, stainlessSteelMaterial);
+      if (orientation === 'z') {
+        cap1.position.set(0, railH, -halfL + 0.04);
+        cap2.position.set(0, railH, halfL - 0.04);
+      } else {
+        cap1.position.set(-halfL + 0.04, railH, 0);
+        cap2.position.set(halfL - 0.04, railH, 0);
+      }
+      g.add(cap1, cap2);
+
+      // Secondary lower guard runner (duplo trilho para reter rodízios de IBC e paleteiras)
+      const lowerRailRadius = 0.016;
+      const lowerRailH = 0.05;
+      const lowerRailGeo = new THREE.CylinderGeometry(lowerRailRadius, lowerRailRadius, length - 0.12, 16);
+      const lowerRailMesh = new THREE.Mesh(lowerRailGeo, stainlessSteelMaterial);
+      lowerRailMesh.castShadow = true;
+      if (orientation === 'z') {
+        lowerRailMesh.rotation.x = Math.PI / 2;
+        lowerRailMesh.position.set(0, lowerRailH, 0);
+      } else {
+        lowerRailMesh.rotation.z = Math.PI / 2;
+        lowerRailMesh.position.set(0, lowerRailH, 0);
+      }
+      g.add(lowerRailMesh);
+
+      // Support Posts (Pilaretes de fixação ao piso com canoplas sanitárias cGMP)
+      const numPosts = Math.max(2, Math.floor(length / 0.85) + 1);
+      const postRadius = 0.02;
+      const postGeo = new THREE.CylinderGeometry(postRadius, postRadius, railH, 16);
+      const flangeGeo = new THREE.CylinderGeometry(0.042, 0.045, 0.016, 20);
+
+      for (let p = 0; p < numPosts; p++) {
+        const offset = -halfL + 0.14 + (p / (numPosts - 1)) * (length - 0.28);
+
+        const post = new THREE.Mesh(postGeo, stainlessSteelMaterial);
+        post.position.set(
+          orientation === 'z' ? 0 : offset,
+          railH / 2,
+          orientation === 'z' ? offset : 0
+        );
+        post.castShadow = true;
+        g.add(post);
+
+        const flange = new THREE.Mesh(flangeGeo, stainlessSteelMaterial);
+        flange.position.set(
+          orientation === 'z' ? 0 : offset,
+          0.008,
+          orientation === 'z' ? offset : 0
+        );
+        g.add(flange);
+      }
+
+      return g;
+    };
+
+    // 1. Parede Esquerda (Baia dos Bins) - individual
+    const bumperLeft = createBumperRailSegment(
+      'Bate_Rodas_Parede_Esquerda',
+      4.10,
+      'z',
+      -halfW + 0.08,
+      0
+    );
+    root.add(bumperLeft);
+    interactiveObjects['bumper_rail_left'] = bumperLeft;
+
+    // 2. Parede Direita (Corredor Lateral) - individual
+    const bumperRight = createBumperRailSegment(
+      'Bate_Rodas_Parede_Direita',
+      3.70,
+      'z',
+      halfW - 0.08,
+      0.18
+    );
+    root.add(bumperRight);
+    interactiveObjects['bumper_rail_right'] = bumperRight;
+
+    // 3. Parede Traseira (Fundos da Baia dos Bins) - individual
+    const bumperBack = createBumperRailSegment(
+      'Bate_Rodas_Parede_Traseira',
+      2.60,
+      'x',
+      -2.00,
+      -halfD + 0.08
+    );
+    root.add(bumperBack);
+    interactiveObjects['bumper_rail_back'] = bumperBack;
+
+    // 4. Parede Frontal (Ao lado da Porta de 3,50m) - individual
+    const bumperFront = createBumperRailSegment(
+      'Bate_Rodas_Parede_Frontal',
+      3.50,
+      'x',
+      -1.50,
+      halfD - 0.08
+    );
+    root.add(bumperFront);
+    interactiveObjects['bumper_rail_front'] = bumperFront;
+
+    // --- 11.6. WALL-MOUNTED HOSE REEL & SANITARY WASH HOSE (SEPARATELY EDITABLE) ---
+    // "aqui nesta parede atras dos Bins, preciso que adicine um suporte na parede para enrolar mangueira e com a mangueira enrolada para lavagem dos bins. De forma que seja editavel também, tanto o suporte quanto a mangueira"
+    
+    // Group 1: Stainless Steel Wall Mount Bracket (Suporte de Parede Inox)
+    const hoseMountGroup = new THREE.Group();
+    hoseMountGroup.name = 'Hose_Reel_Mount_Stainless';
+    hoseMountGroup.position.set(-2.55, 1.35, -halfD + 0.05);
+
+    // Wall backplate (placa traseira de fixação)
+    const plateW = 0.38;
+    const plateH = 0.42;
+    const backPlate = new THREE.Mesh(
+      new THREE.BoxGeometry(plateW, plateH, 0.015),
+      stainlessSteelMaterial
+    );
+    backPlate.position.set(0, 0, 0.008);
+    backPlate.castShadow = true;
+    hoseMountGroup.add(backPlate);
+
+    // 4 Corner Mounting Hex Cap Bolts
+    const mountBoltGeo = new THREE.CylinderGeometry(0.014, 0.014, 0.012, 16);
+    const boltOffsets = [
+      [-plateW / 2 + 0.04, plateH / 2 - 0.04],
+      [plateW / 2 - 0.04, plateH / 2 - 0.04],
+      [-plateW / 2 + 0.04, -plateH / 2 + 0.04],
+      [plateW / 2 - 0.04, -plateH / 2 + 0.04],
+    ];
+    boltOffsets.forEach(([bx, by]) => {
+      const bolt = new THREE.Mesh(mountBoltGeo, darkSteelMaterial);
+      bolt.rotation.x = Math.PI / 2;
+      bolt.position.set(bx, by, 0.018);
+      hoseMountGroup.add(bolt);
+    });
+
+    // Curved saddle cradle (berço semicircular em chapa curva inox para apoiar as voltas)
+    const saddleRadius = 0.16;
+    const saddleDepth = 0.22;
+    const saddleCurve = new THREE.CylinderGeometry(saddleRadius, saddleRadius, saddleDepth, 24, 1, false, Math.PI, Math.PI);
+    const saddleMesh = new THREE.Mesh(saddleCurve, stainlessSteelMaterial);
+    saddleMesh.rotation.z = Math.PI / 2;
+    saddleMesh.rotation.y = Math.PI / 2;
+    saddleMesh.position.set(0, 0.06, saddleDepth / 2 + 0.015);
+    saddleMesh.castShadow = true;
+    hoseMountGroup.add(saddleMesh);
+
+    // Front retaining tabs (abas verticais frontais que impedem a mangueira de escorregar para frente)
+    const tabGeo = new THREE.BoxGeometry(0.024, 0.14, 0.012);
+    const tabL = new THREE.Mesh(tabGeo, stainlessSteelMaterial);
+    tabL.position.set(-saddleRadius + 0.02, 0.11, saddleDepth + 0.015);
+    const tabR = new THREE.Mesh(tabGeo, stainlessSteelMaterial);
+    tabR.position.set(saddleRadius - 0.02, 0.11, saddleDepth + 0.015);
+    const tabCenter = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.18, 0.012), stainlessSteelMaterial);
+    tabCenter.position.set(0, 0.13, saddleDepth + 0.015);
+    hoseMountGroup.add(tabL, tabR, tabCenter);
+
+    // Side Holster Bracket for the Wash Spray Gun (coldre lateral para engate da pistola)
+    const holsterRing = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.032, 0.028, 0.06, 20),
+      stainlessSteelMaterial
+    );
+    holsterRing.position.set(plateW / 2 + 0.05, -0.05, 0.12);
+    const holsterArm = new THREE.Mesh(
+      new THREE.BoxGeometry(0.06, 0.015, 0.12),
+      stainlessSteelMaterial
+    );
+    holsterArm.position.set(plateW / 2 + 0.02, -0.05, 0.06);
+    hoseMountGroup.add(holsterRing, holsterArm);
+
+    root.add(hoseMountGroup);
+    interactiveObjects['hose_reel_mount'] = hoseMountGroup;
+
+    // Group 2: Coiled Cleanroom Wash Hose with Spray Gun (Mangueira Enrolada com Pistola)
+    const washHoseGroup = new THREE.Group();
+    washHoseGroup.name = 'Sanitary_Wash_Hose_Coiled';
+    washHoseGroup.position.set(-2.55, 1.35, -halfD + 0.05 + saddleDepth / 2 + 0.02);
+
+    const hoseMat = new THREE.MeshStandardMaterial({
+      color: 0x2563eb, // Cleanroom FDA braided blue hose
+      roughness: 0.32,
+      metalness: 0.12,
+    });
+
+    // 4 Realistic coiled concentric loops around the saddle
+    const loopRadii = [0.17, 0.185, 0.20, 0.215];
+    const loopOffsetsZ = [-0.07, -0.025, 0.025, 0.07];
+    loopRadii.forEach((rad, idx) => {
+      const loopGeo = new THREE.TorusGeometry(rad, 0.013, 16, 40);
+      const loopMesh = new THREE.Mesh(loopGeo, hoseMat);
+      loopMesh.rotation.y = (Math.random() - 0.5) * 0.06;
+      loopMesh.position.set((Math.random() - 0.5) * 0.015, 0.06 - (rad - 0.17) * 0.4, loopOffsetsZ[idx]);
+      loopMesh.castShadow = true;
+      washHoseGroup.add(loopMesh);
+    });
+
+    // Natural hanging gravitational loop (laço de mangueira pendendo suavemente)
+    const hangCurve = new THREE.CubicBezierCurve3(
+      new THREE.Vector3(-0.16, 0.0, 0.04),
+      new THREE.Vector3(-0.20, -0.42, 0.08),
+      new THREE.Vector3(0.05, -0.44, 0.10),
+      new THREE.Vector3(0.18, -0.15, 0.06)
+    );
+    const hangGeo = new THREE.TubeGeometry(hangCurve, 32, 0.013, 16, false);
+    const hangMesh = new THREE.Mesh(hangGeo, hoseMat);
+    hangMesh.castShadow = true;
+    washHoseGroup.add(hangMesh);
+
+    // Lead connecting hose up towards the overhead utilities
+    const leadCurve = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(-0.14, 0.14, -0.06),
+      new THREE.Vector3(-0.18, 0.55, -0.04),
+      new THREE.Vector3(-0.18, 0.90, -0.02)
+    );
+    const leadGeo = new THREE.TubeGeometry(leadCurve, 24, 0.013, 16, false);
+    const leadMesh = new THREE.Mesh(leadGeo, hoseMat);
+    washHoseGroup.add(leadMesh);
+
+    // Industrial Cleanroom Wash Spray Gun (Pistola de Alta Pressão em Inox)
+    const gunGroup = new THREE.Group();
+    // Gun body
+    const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.16, 0.05), stainlessSteelMaterial);
+    gunBody.position.set(0, 0.06, 0);
+    // Ergonomic blue rubber handle insulation
+    const gunGrip = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.12, 0.035), hoseMat);
+    gunGrip.position.set(0, 0.04, -0.01);
+    // Barrel & conical nozzle
+    const gunBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.16, 16), stainlessSteelMaterial);
+    gunBarrel.rotation.x = Math.PI / 2;
+    gunBarrel.position.set(0, 0.12, 0.10);
+    const gunNozzle = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.04, 16), chromeFaucetMaterial);
+    gunNozzle.rotation.x = Math.PI / 2;
+    gunNozzle.position.set(0, 0.12, 0.20);
+    // Trigger & guard
+    const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.07, 0.018), darkSteelMaterial);
+    trigger.position.set(0, 0.05, 0.025);
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.10, 0.008), stainlessSteelMaterial);
+    guard.position.set(0, 0.05, 0.042);
+    // Swivel inlet at base
+    const swivelInlet = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.04, 16), chromeFaucetMaterial);
+    swivelInlet.position.set(0, -0.03, 0);
+
+    gunGroup.add(gunBody, gunGrip, gunBarrel, gunNozzle, trigger, guard, swivelInlet);
+    // Position the spray gun sitting in the holster on the right side
+    gunGroup.rotation.x = 0.25;
+    gunGroup.rotation.z = -0.15;
+    gunGroup.position.set(plateW / 2 + 0.05, 0.04, 0.02);
+    gunGroup.castShadow = true;
+    washHoseGroup.add(gunGroup);
+
+    root.add(washHoseGroup);
+    interactiveObjects['wash_hose_coiled'] = washHoseGroup;
+
+    // --- 11.7. PHARMACEUTICAL CLEANROOM OBSERVATION WINDOWS (BEHIND SINK) ---
+    // "adicoine duas janelas nessa parede atras da pia, janelas quadradas com a borda preta, estilo fabrica farmaceutica. também editavel"
+
+    const blackFrameMat = new THREE.MeshStandardMaterial({
+      color: 0x18181b, // Satin black anodized aluminum cleanroom frame
+      roughness: 0.35,
+      metalness: 0.70,
+      envMap: envMap,
+      envMapIntensity: 0.4,
+    });
+
+    const blackFritMat = new THREE.MeshBasicMaterial({
+      color: 0x09090b, // Ceramic black silk-screen perimeter frit
+    });
+
+    const cleanroomGlassMat = new THREE.MeshStandardMaterial({
+      color: 0xdbeafe, // Cleanroom tint safety glass
+      roughness: 0.08,
+      metalness: 0.20,
+      transparent: true,
+      opacity: 0.50,
+      envMap: envMap,
+      envMapIntensity: 0.9,
+    });
+
+    const corridorBgMat = new THREE.MeshBasicMaterial({
+      color: 0xe2e8f0, // Soft clean illuminated adjacent cleanroom corridor
+    });
+
+    const createCleanroomWindow = (name: string, posX: number, posY: number, posZ: number, size = 0.95) => {
+      const wGroup = new THREE.Group();
+      wGroup.name = name;
+      wGroup.position.set(posX, posY, posZ);
+
+      const frameThick = 0.05; // 5cm frame profile width
+      const frameDepth = 0.024; // 2.4cm protruding flush frame
+      const innerW = size - frameThick * 2;
+      const innerH = size - frameThick * 2;
+
+      // 1. Black Anodized Outer Frame (Top, Bottom, Left, Right)
+      const topBar = new THREE.Mesh(new THREE.BoxGeometry(size, frameThick, frameDepth), blackFrameMat);
+      topBar.position.set(0, size / 2 - frameThick / 2, 0);
+
+      const bottomBar = new THREE.Mesh(new THREE.BoxGeometry(size, frameThick, frameDepth), blackFrameMat);
+      bottomBar.position.set(0, -size / 2 + frameThick / 2, 0);
+
+      const leftBar = new THREE.Mesh(new THREE.BoxGeometry(frameThick, innerH, frameDepth), blackFrameMat);
+      leftBar.position.set(-size / 2 + frameThick / 2, 0, 0);
+
+      const rightBar = new THREE.Mesh(new THREE.BoxGeometry(frameThick, innerH, frameDepth), blackFrameMat);
+      rightBar.position.set(size / 2 - frameThick / 2, 0, 0);
+
+      topBar.castShadow = true;
+      bottomBar.castShadow = true;
+      leftBar.castShadow = true;
+      rightBar.castShadow = true;
+      wGroup.add(topBar, bottomBar, leftBar, rightBar);
+
+      // 2. Interior Black Ceramic Frit Border (cGMP screen print on glass perimeter)
+      const fritW = 0.035;
+      const fritTop = new THREE.Mesh(new THREE.PlaneGeometry(innerW, fritW), blackFritMat);
+      fritTop.position.set(0, innerH / 2 - fritW / 2, 0.006);
+      const fritBottom = new THREE.Mesh(new THREE.PlaneGeometry(innerW, fritW), blackFritMat);
+      fritBottom.position.set(0, -innerH / 2 + fritW / 2, 0.006);
+      const fritLeft = new THREE.Mesh(new THREE.PlaneGeometry(fritW, innerH - fritW * 2), blackFritMat);
+      fritLeft.position.set(-innerW / 2 + fritW / 2, 0, 0.006);
+      const fritRight = new THREE.Mesh(new THREE.PlaneGeometry(fritW, innerH - fritW * 2), blackFritMat);
+      fritRight.position.set(innerW / 2 - fritW / 2, 0, 0.006);
+      wGroup.add(fritTop, fritBottom, fritLeft, fritRight);
+
+      // 3. Double Flush Safety Cleanroom Glazing
+      const glassPane = new THREE.Mesh(new THREE.PlaneGeometry(innerW, innerH), cleanroomGlassMat);
+      glassPane.position.set(0, 0, 0.007);
+      wGroup.add(glassPane);
+
+      // 4. Adjacent Corridor View Backing (gives realistic cleanroom depth)
+      const backing = new THREE.Mesh(new THREE.PlaneGeometry(innerW, innerH), corridorBgMat);
+      backing.position.set(0, 0, -0.002);
+      const corridorFloorDivider = new THREE.Mesh(
+        new THREE.PlaneGeometry(innerW, 0.008),
+        new THREE.MeshBasicMaterial({ color: 0x94a3b8 })
+      );
+      corridorFloorDivider.position.set(0, -0.22, -0.001);
+      wGroup.add(backing, corridorFloorDivider);
+
+      return wGroup;
+    };
+
+    const windowSize = 0.95;
+    const windowY = 1.75;
+    const windowZ = -halfD + 0.012;
+
+    // Window 1: Left window behind sink (centered at X = 0.10)
+    const windowLeft = createCleanroomWindow(
+      'Janela_Farmaceutica_Esquerda',
+      0.10,
+      windowY,
+      windowZ,
+      windowSize
+    );
+    root.add(windowLeft);
+    interactiveObjects['cleanroom_window_left'] = windowLeft;
+
+    // Window 2: Right window behind sink (centered at X = 1.60)
+    const windowRight = createCleanroomWindow(
+      'Janela_Farmaceutica_Direita',
+      1.60,
+      windowY,
+      windowZ,
+      windowSize
+    );
+    root.add(windowRight);
+    interactiveObjects['cleanroom_window_right'] = windowRight;
 
     // --- 12. TECHNICAL DIMENSION LINES ---
     const createDimLine = (start: THREE.Vector3, end: THREE.Vector3, labelText: string, offset: THREE.Vector3) => {

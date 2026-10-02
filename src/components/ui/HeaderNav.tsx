@@ -8,13 +8,14 @@ import {
   Cpu,
   Eye,
   EyeOff,
+  Move,
 } from 'lucide-react';
 import { RenderMode, LightingPreset, WallVisibility } from '../../types/archviz';
 
 interface HeaderNavProps {
   fps: number;
-  renderMode: RenderMode;
-  onSelectRenderMode: (mode: RenderMode) => void;
+  renderMode?: RenderMode;
+  onSelectRenderMode?: (mode: RenderMode) => void;
   lightingPreset: LightingPreset;
   onSelectLighting: (preset: LightingPreset) => void;
   wallVisibility: WallVisibility;
@@ -24,6 +25,8 @@ interface HeaderNavProps {
   onOpenMaterials: () => void;
   onOpenBlueprint: () => void;
   onTakeScreenshot: () => void;
+  isOutlinerOpen?: boolean;
+  onToggleOutliner?: () => void;
 }
 
 export const HeaderNav: React.FC<HeaderNavProps> = ({
@@ -35,6 +38,8 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   onOpenMaterials,
   onOpenBlueprint,
   onTakeScreenshot,
+  isOutlinerOpen,
+  onToggleOutliner,
 }) => {
   return (
     <header className="absolute top-0 left-0 right-0 z-20 flex flex-wrap items-center justify-between px-4 py-2.5 bg-slate-950/85 backdrop-blur-md border-b border-slate-800/80 text-white select-none">
@@ -94,6 +99,20 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
           <span className="hidden sm:inline">
             {wallVisibility === 'all' ? 'Ver Paredes' : wallVisibility === 'cutaway' ? 'Corte Interno' : 'Sem Paredes'}
           </span>
+        </button>
+
+        {/* 3D Layout Editor / Scene Items Toggle */}
+        <button
+          onClick={onToggleOutliner}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 border rounded text-xs font-semibold transition-all shadow-sm ${
+            isOutlinerOpen
+              ? 'bg-sky-500 border-sky-400 text-slate-950 font-bold shadow-md shadow-sky-500/30'
+              : 'bg-slate-900 hover:bg-slate-800 border-slate-700/80 hover:border-sky-400/60 text-sky-300'
+          }`}
+          title="Editar posições, rotações, tamanhos, demarcações e ralo 3D"
+        >
+          <Move className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Editor 3D</span>
         </button>
 
         {/* Technical Blueprint Modal Toggle */}

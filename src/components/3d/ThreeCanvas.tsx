@@ -6,6 +6,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 
 import {
   RenderMode,
@@ -19,8 +20,20 @@ import {
   GlossLevel,
   HotspotItem,
 } from '../../types/archviz';
+import { TransformMode, TransformData, SceneItemMeta } from '../../types/editor';
 import { HOTSPOTS_DATA } from '../../data/equipmentData';
 import { RoomBuilder, RoomMeshes } from './RoomBuilder';
+
+export interface ImperativeEditorActions {
+  updateTransform: (partial: Partial<TransformData>) => void;
+  deleteSelected: () => void;
+  duplicateSelected: () => void;
+  resetSelected: () => void;
+  resetAll: () => void;
+  toggleItemVisibility: (id: string) => void;
+  deleteItemById: (id: string) => void;
+  addItem: (type: 'bin' | 'drain' | 'demarcation') => void;
+}
 
 interface ThreeCanvasProps {
   renderMode: RenderMode;
@@ -48,6 +61,12 @@ interface ThreeCanvasProps {
   onMeasuredDistance: (dist: number | null) => void;
   onCaptureScreenshotRef?: (trigger: () => void) => void;
   onFpsUpdate?: (fps: number) => void;
+  transformMode?: TransformMode;
+  snapEnabled?: boolean;
+  lockCameraRotation?: boolean;
+  onTransformChange?: (data: TransformData) => void;
+  onSceneItemsInitialized?: (items: SceneItemMeta[]) => void;
+  imperativeEditorRef?: React.MutableRefObject<ImperativeEditorActions | null>;
 }
 
 export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
@@ -76,6 +95,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   onMeasuredDistance,
   onCaptureScreenshotRef,
   onFpsUpdate,
+  transformMode = 'translate',
+  snapEnabled = true,
+  lockCameraRotation = false,
+  onTransformChange,
+  onSceneItemsInitialized,
+  imperativeEditorRef,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -85,6 +110,13 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const roomMeshesRef = useRef<RoomMeshes | null>(null);
+
+  // TransformControls 3D Gizmo state
+  const transformControlsRef = useRef<TransformControls | null>(null);
+  const isDraggingGizmoRef = useRef<boolean>(false);
+  const defaultTransformsRef = useRef<{ [id: string]: TransformData }>({});
+  const onTransformChangeRef = useRef(onTransformChange);
+  onTransformChangeRef.current = onTransformChange;
 
   // Hotspots Sprite Group
   const hotspotsGroupRef = useRef<THREE.Group | null>(null);
@@ -191,6 +223,102 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
     room.setWaterActive(isTapActive);
     room.setCipActive(isCipActive);
+
+    // Record initial transforms and notify parent of scene items
+    const initialItems: SceneItemMeta[] = [];
+    const nameMap: { [key: string]: { name: string; cat: string } } = {
+      demarcation_counter_right: { name: 'Faixa Amarela: Lateral da Bancada', cat: 'Demarcações do Piso' },
+      demarcation_counter_front: { name: 'Faixa Amarela: Frontal da Bancada', cat: 'Demarcações do Piso' },
+      demarcation_bay_divider: { name: 'Faixa Amarela: Divisória Baia dos Bins', cat: 'Demarcações do Piso' },
+      demarcation_front_corridor: { name: 'Faixa Amarela: Corredor da Porta', cat: 'Demarcações do Piso' },
+      floor_drain: { name: 'Canaleta Linear de Dreno Inox', cat: 'Drenagem & Piso' },
+      bin_1000l_1: { name: 'Bin Farmacêutico 1000L (#1)', cat: 'IBC Inox 316L' },
+      bin_1000l_2: { name: 'Bin Farmacêutico 1000L (#2)', cat: 'IBC Inox 316L' },
+      platform_stairs: { name: 'Plataforma Móvel com Escada', cat: 'Acesso & Operação' },
+      marble_counter_sink: { name: 'Bancada 3,00m & Cuba Profunda Central', cat: 'Lavagem & Bancada' },
+      shelving_units: { name: 'Armário Sanitário de Canto', cat: 'Mobiliário Sanitário' },
+      overhead_piping: { name: 'Tubulações Aéreas Água & Ar', cat: 'Utilidades Aéreas' },
+      sliding_door: { name: 'Porta de Correr 3,50m', cat: 'Acesso Principal' },
+      bumper_rail_left: { name: 'Bate-Rodas Inox: Parede Esquerda', cat: 'Proteção Sanitária' },
+      bumper_rail_right: { name: 'Bate-Rodas Inox: Parede Direita', cat: 'Proteção Sanitária' },
+      bumper_rail_back: { name: 'Bate-Rodas Inox: Parede Traseira', cat: 'Proteção Sanitária' },
+      bumper_rail_front: { name: 'Bate-Rodas Inox: Parede Frontal', cat: 'Proteção Sanitária' },
+      hose_reel_mount: { name: 'Suporte de Parede Inox (Carretel)', cat: 'Lavagem & Utilidades' },
+      wash_hose_coiled: { name: 'Mangueira de Lavagem com Pistola', cat: 'Lavagem & Utilidades' },
+      cleanroom_window_left: { name: 'Janela Farmacêutica Esquerda (Atrás da Pia)', cat: 'Esquadrias & Visores' },
+      cleanroom_window_right: { name: 'Janela Farmacêutica Direita (Atrás da Pia)', cat: 'Esquadrias & Visores' },
+    };
+
+    for (const [id, obj] of Object.entries(room.interactiveObjects)) {
+      defaultTransformsRef.current[id] = {
+        position: { x: Number(obj.position.x.toFixed(3)), y: Number(obj.position.y.toFixed(3)), z: Number(obj.position.z.toFixed(3)) },
+        rotation: {
+          x: Number(THREE.MathUtils.radToDeg(obj.rotation.x).toFixed(1)),
+          y: Number(THREE.MathUtils.radToDeg(obj.rotation.y).toFixed(1)),
+          z: Number(THREE.MathUtils.radToDeg(obj.rotation.z).toFixed(1)),
+        },
+        scale: { x: Number(obj.scale.x.toFixed(2)), y: Number(obj.scale.y.toFixed(2)), z: Number(obj.scale.z.toFixed(2)) },
+      };
+      const meta = nameMap[id] || { name: obj.name || id, cat: 'Elemento da Sala' };
+      initialItems.push({
+        id,
+        name: meta.name,
+        category: meta.cat,
+        visible: obj.visible,
+        defaultTransform: defaultTransformsRef.current[id],
+      });
+    }
+
+    if (onSceneItemsInitialized) {
+      onSceneItemsInitialized(initialItems);
+    }
+
+    // TransformControls 3D Interactive Gizmo
+    const transformControls = new TransformControls(camera, renderer.domElement);
+    transformControls.size = 0.85;
+    transformControls.setMode(transformMode);
+    if (snapEnabled) {
+      transformControls.setTranslationSnap(0.05);
+      transformControls.setRotationSnap(THREE.MathUtils.degToRad(15));
+      transformControls.setScaleSnap(0.05);
+    }
+    transformControlsRef.current = transformControls;
+    const gizmoHelper = transformControls.getHelper();
+    scene.add(gizmoHelper);
+
+    transformControls.addEventListener('dragging-changed', (event: any) => {
+      isDraggingGizmoRef.current = Boolean(event.value);
+      if (controlsRef.current) {
+        controlsRef.current.enabled = !event.value;
+      }
+    });
+
+    transformControls.addEventListener('change', () => {
+      const obj = transformControls.object;
+      if (!obj) return;
+      if (highlightBoxRef.current) {
+        highlightBoxRef.current.setFromObject(obj);
+      }
+      if (onTransformChangeRef.current) {
+        onTransformChangeRef.current({
+          position: {
+            x: Number(obj.position.x.toFixed(3)),
+            y: Number(obj.position.y.toFixed(3)),
+            z: Number(obj.position.z.toFixed(3)),
+          },
+          rotation: {
+            x: Number(THREE.MathUtils.radToDeg(obj.rotation.x).toFixed(1)),
+            y: Number(THREE.MathUtils.radToDeg(obj.rotation.y).toFixed(1)),
+            z: Number(THREE.MathUtils.radToDeg(obj.rotation.z).toFixed(1)),
+          },
+          scale: {
+            x: Number(obj.scale.x.toFixed(2)),
+            y: Number(obj.scale.y.toFixed(2)),
+            z: Number(obj.scale.z.toFixed(2)),
+          },
+        });
+      }
+    });
 
     // 3D Floating Hotspots Group (Kept empty - blue circle markers removed per user request)
     const hotspotsGroup = new THREE.Group();
@@ -422,6 +550,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      transformControls.dispose();
       controls.dispose();
       renderer.dispose();
       pmremGenerator.dispose();
@@ -565,19 +694,240 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     }
   }, [activePreset, cameraMode]);
 
-  // Selected Equipment Highlight
+  // Selected Equipment Highlight & TransformControls Gizmo Attachment
   useEffect(() => {
-    if (!highlightBoxRef.current || !roomMeshesRef.current) return;
     const box = highlightBoxRef.current;
+    const tc = transformControlsRef.current;
+    if (!roomMeshesRef.current) return;
 
     if (selectedEquipmentId && roomMeshesRef.current.interactiveObjects[selectedEquipmentId]) {
       const obj = roomMeshesRef.current.interactiveObjects[selectedEquipmentId];
-      box.setFromObject(obj);
-      box.visible = true;
+      if (box) {
+        box.setFromObject(obj);
+        box.visible = true;
+      }
+      if (tc) {
+        tc.attach(obj);
+      }
+      if (onTransformChange) {
+        onTransformChange({
+          position: {
+            x: Number(obj.position.x.toFixed(3)),
+            y: Number(obj.position.y.toFixed(3)),
+            z: Number(obj.position.z.toFixed(3)),
+          },
+          rotation: {
+            x: Number(THREE.MathUtils.radToDeg(obj.rotation.x).toFixed(1)),
+            y: Number(THREE.MathUtils.radToDeg(obj.rotation.y).toFixed(1)),
+            z: Number(THREE.MathUtils.radToDeg(obj.rotation.z).toFixed(1)),
+          },
+          scale: {
+            x: Number(obj.scale.x.toFixed(2)),
+            y: Number(obj.scale.y.toFixed(2)),
+            z: Number(obj.scale.z.toFixed(2)),
+          },
+        });
+      }
     } else {
-      box.visible = false;
+      if (box) box.visible = false;
+      if (tc) tc.detach();
     }
   }, [selectedEquipmentId]);
+
+  // Sync transformMode
+  useEffect(() => {
+    if (transformControlsRef.current && transformMode) {
+      transformControlsRef.current.setMode(transformMode);
+    }
+  }, [transformMode]);
+
+  // Sync snapEnabled
+  useEffect(() => {
+    if (transformControlsRef.current) {
+      if (snapEnabled) {
+        transformControlsRef.current.setTranslationSnap(0.05);
+        transformControlsRef.current.setRotationSnap(THREE.MathUtils.degToRad(15));
+        transformControlsRef.current.setScaleSnap(0.05);
+      } else {
+        transformControlsRef.current.setTranslationSnap(null);
+        transformControlsRef.current.setRotationSnap(null);
+        transformControlsRef.current.setScaleSnap(null);
+      }
+    }
+  }, [snapEnabled]);
+
+  // Sync Camera Rotation Lock (Stops screen from spinning while editing)
+  useEffect(() => {
+    if (controlsRef.current) {
+      controlsRef.current.enableRotate = !lockCameraRotation;
+    }
+  }, [lockCameraRotation]);
+
+  // Wire Imperative Actions to Ref
+  useEffect(() => {
+    if (!imperativeEditorRef) return;
+    imperativeEditorRef.current = {
+      updateTransform: (partial) => {
+        if (!selectedEquipmentId || !roomMeshesRef.current) return;
+        const obj = roomMeshesRef.current.interactiveObjects[selectedEquipmentId];
+        if (!obj) return;
+
+        if (partial.position) {
+          if (partial.position.x !== undefined) obj.position.x = partial.position.x;
+          if (partial.position.y !== undefined) obj.position.y = partial.position.y;
+          if (partial.position.z !== undefined) obj.position.z = partial.position.z;
+        }
+        if (partial.rotation) {
+          if (partial.rotation.x !== undefined) obj.rotation.x = THREE.MathUtils.degToRad(partial.rotation.x);
+          if (partial.rotation.y !== undefined) obj.rotation.y = THREE.MathUtils.degToRad(partial.rotation.y);
+          if (partial.rotation.z !== undefined) obj.rotation.z = THREE.MathUtils.degToRad(partial.rotation.z);
+        }
+        if (partial.scale) {
+          if (partial.scale.x !== undefined) obj.scale.x = partial.scale.x;
+          if (partial.scale.y !== undefined) obj.scale.y = partial.scale.y;
+          if (partial.scale.z !== undefined) obj.scale.z = partial.scale.z;
+        }
+
+        if (highlightBoxRef.current) highlightBoxRef.current.setFromObject(obj);
+        if (transformControlsRef.current) transformControlsRef.current.attach(obj);
+      },
+      deleteSelected: () => {
+        if (!selectedEquipmentId || !roomMeshesRef.current) return;
+        const obj = roomMeshesRef.current.interactiveObjects[selectedEquipmentId];
+        if (!obj) return;
+        obj.visible = false;
+        if (transformControlsRef.current) transformControlsRef.current.detach();
+        if (highlightBoxRef.current) highlightBoxRef.current.visible = false;
+        onSelectEquipment(null);
+      },
+      duplicateSelected: () => {
+        if (!selectedEquipmentId || !roomMeshesRef.current || !sceneRef.current) return;
+        const srcObj = roomMeshesRef.current.interactiveObjects[selectedEquipmentId];
+        if (!srcObj) return;
+
+        const clone = srcObj.clone(true);
+        const newId = `${selectedEquipmentId}_copy_${Date.now() % 10000}`;
+        clone.name = `${srcObj.name || selectedEquipmentId} (Cópia)`;
+        clone.position.x += 0.35;
+        clone.position.z += 0.35;
+        clone.visible = true;
+
+        sceneRef.current.add(clone);
+        roomMeshesRef.current.interactiveObjects[newId] = clone;
+
+        defaultTransformsRef.current[newId] = {
+          position: { x: Number(clone.position.x.toFixed(3)), y: Number(clone.position.y.toFixed(3)), z: Number(clone.position.z.toFixed(3)) },
+          rotation: {
+            x: Number(THREE.MathUtils.radToDeg(clone.rotation.x).toFixed(1)),
+            y: Number(THREE.MathUtils.radToDeg(clone.rotation.y).toFixed(1)),
+            z: Number(THREE.MathUtils.radToDeg(clone.rotation.z).toFixed(1)),
+          },
+          scale: { x: Number(clone.scale.x.toFixed(2)), y: Number(clone.scale.y.toFixed(2)), z: Number(clone.scale.z.toFixed(2)) },
+        };
+
+        onSelectEquipment(newId);
+      },
+      resetSelected: () => {
+        if (!selectedEquipmentId || !roomMeshesRef.current) return;
+        const obj = roomMeshesRef.current.interactiveObjects[selectedEquipmentId];
+        const def = defaultTransformsRef.current[selectedEquipmentId];
+        if (!obj || !def) return;
+
+        obj.position.set(def.position.x, def.position.y, def.position.z);
+        obj.rotation.set(
+          THREE.MathUtils.degToRad(def.rotation.x),
+          THREE.MathUtils.degToRad(def.rotation.y),
+          THREE.MathUtils.degToRad(def.rotation.z)
+        );
+        obj.scale.set(def.scale.x, def.scale.y, def.scale.z);
+        obj.visible = true;
+
+        if (highlightBoxRef.current) highlightBoxRef.current.setFromObject(obj);
+        if (transformControlsRef.current) transformControlsRef.current.attach(obj);
+        if (onTransformChange) onTransformChange(def);
+      },
+      resetAll: () => {
+        if (!roomMeshesRef.current) return;
+        for (const [id, def] of Object.entries(defaultTransformsRef.current)) {
+          const obj = roomMeshesRef.current.interactiveObjects[id];
+          if (obj) {
+            obj.position.set(def.position.x, def.position.y, def.position.z);
+            obj.rotation.set(
+              THREE.MathUtils.degToRad(def.rotation.x),
+              THREE.MathUtils.degToRad(def.rotation.y),
+              THREE.MathUtils.degToRad(def.rotation.z)
+            );
+            obj.scale.set(def.scale.x, def.scale.y, def.scale.z);
+            obj.visible = true;
+          }
+        }
+        if (selectedEquipmentId && roomMeshesRef.current.interactiveObjects[selectedEquipmentId]) {
+          const obj = roomMeshesRef.current.interactiveObjects[selectedEquipmentId];
+          if (highlightBoxRef.current) highlightBoxRef.current.setFromObject(obj);
+          if (transformControlsRef.current) transformControlsRef.current.attach(obj);
+          const def = defaultTransformsRef.current[selectedEquipmentId];
+          if (def && onTransformChange) onTransformChange(def);
+        }
+      },
+      toggleItemVisibility: (id: string) => {
+        if (!roomMeshesRef.current) return;
+        const obj = roomMeshesRef.current.interactiveObjects[id];
+        if (!obj) return;
+        obj.visible = !obj.visible;
+        if (!obj.visible && selectedEquipmentId === id) {
+          if (transformControlsRef.current) transformControlsRef.current.detach();
+          if (highlightBoxRef.current) highlightBoxRef.current.visible = false;
+          onSelectEquipment(null);
+        }
+      },
+      deleteItemById: (id: string) => {
+        if (!roomMeshesRef.current) return;
+        const obj = roomMeshesRef.current.interactiveObjects[id];
+        if (!obj) return;
+        obj.visible = false;
+        if (selectedEquipmentId === id) {
+          if (transformControlsRef.current) transformControlsRef.current.detach();
+          if (highlightBoxRef.current) highlightBoxRef.current.visible = false;
+          onSelectEquipment(null);
+        }
+      },
+      addItem: (type) => {
+        if (!roomMeshesRef.current || !sceneRef.current) return;
+        let baseId = 'bin_1000l_1';
+        const defaultPos = new THREE.Vector3(-0.6, 0, 0);
+        if (type === 'drain') {
+          baseId = 'floor_drain';
+          defaultPos.set(0, 0, 0.4);
+        } else if (type === 'demarcation') {
+          baseId = 'floor_demarcation';
+          defaultPos.set(0.6, 0.002, 0.6);
+        }
+
+        const srcObj = roomMeshesRef.current.interactiveObjects[baseId];
+        if (!srcObj) return;
+
+        const clone = srcObj.clone(true);
+        const newId = `${type}_novo_${Date.now() % 10000}`;
+        clone.position.copy(defaultPos);
+        clone.visible = true;
+
+        sceneRef.current.add(clone);
+        roomMeshesRef.current.interactiveObjects[newId] = clone;
+
+        defaultTransformsRef.current[newId] = {
+          position: { x: Number(clone.position.x.toFixed(3)), y: Number(clone.position.y.toFixed(3)), z: Number(clone.position.z.toFixed(3)) },
+          rotation: {
+            x: Number(THREE.MathUtils.radToDeg(clone.rotation.x).toFixed(1)),
+            y: Number(THREE.MathUtils.radToDeg(clone.rotation.y).toFixed(1)),
+            z: Number(THREE.MathUtils.radToDeg(clone.rotation.z).toFixed(1)),
+          },
+          scale: { x: Number(clone.scale.x.toFixed(2)), y: Number(clone.scale.y.toFixed(2)), z: Number(clone.scale.z.toFixed(2)) },
+        };
+
+        onSelectEquipment(newId);
+      },
+    };
+  });
 
   // Top Ortho Camera Switch
   useEffect(() => {
@@ -645,6 +995,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   };
 
   const handleClick = (e: React.MouseEvent) => {
+    // 0. If user just finished dragging the 3D Gizmo, ignore click to maintain selection
+    if (isDraggingGizmoRef.current) {
+      isDraggingGizmoRef.current = false;
+      return;
+    }
+
     if (!mountRef.current || !cameraRef.current || !roomMeshesRef.current || !sceneRef.current) return;
     const rect = mountRef.current.getBoundingClientRect();
     const mouse = new THREE.Vector2(
@@ -700,6 +1056,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     let clickedId: string | null = null;
 
     for (const [id, obj] of Object.entries(interactiveDict)) {
+      if (!obj.visible) continue;
       const hits = raycaster.intersectObject(obj, true);
       if (hits.length > 0) {
         clickedId = id;
@@ -707,12 +1064,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       }
     }
 
-    if (clickedId === 'sliding_door') {
+    if (clickedId === 'sliding_door' && !selectedEquipmentId) {
       onToggleDoor();
-    } else if (clickedId === 'marble_counter_sink') {
-      onToggleTap();
-    } else if (clickedId === 'overhead_piping') {
-      onToggleCip();
     }
 
     onSelectEquipment(clickedId);
@@ -737,6 +1090,14 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         <div className="absolute top-16 right-6 z-20 pointer-events-none flex items-center gap-2 px-3 py-1.5 bg-blue-950/90 border border-blue-400 text-blue-200 rounded-lg text-xs font-mono shadow-xl backdrop-blur-md animate-pulse">
           <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
           <span>Shift Ativo: Arraste para mover (Pan H/V)</span>
+        </div>
+      )}
+
+      {/* Camera Rotation Locked Indicator Badge */}
+      {lockCameraRotation && (
+        <div className="absolute bottom-20 left-6 z-20 pointer-events-none flex items-center gap-2 px-3 py-1.5 bg-rose-950/90 border border-rose-500/60 text-rose-200 rounded-lg text-xs font-mono shadow-xl backdrop-blur-md animate-in fade-in duration-200">
+          <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />
+          <span>Giro da Tela Travado (Modo Edição)</span>
         </div>
       )}
     </div>

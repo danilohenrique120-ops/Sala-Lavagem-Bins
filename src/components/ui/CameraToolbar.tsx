@@ -12,6 +12,10 @@ import {
   Crosshair,
   Waves,
   MapPin,
+  Move,
+  Layers,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import { CameraMode, CameraPreset, WallVisibility } from '../../types/archviz';
 
@@ -49,9 +53,9 @@ export const CAMERA_PRESETS: CameraPreset[] = [
   },
   {
     id: 'marble_counter',
-    label: 'Bancada & Pia Hospitalar',
-    position: [0.6, 1.6, -0.6],
-    target: [0.6, 1.0, -2.1],
+    label: 'Bancada 3m & Cuba Profunda',
+    position: [0.85, 1.6, -0.6],
+    target: [0.85, 1.0, -2.1],
   },
   {
     id: 'platform_wash',
@@ -61,9 +65,9 @@ export const CAMERA_PRESETS: CameraPreset[] = [
   },
   {
     id: 'shelving_area',
-    label: 'Armários Azuis Organizadores',
-    position: [1.2, 1.7, 0.5],
-    target: [3.2, 1.2, 0.5],
+    label: 'Armário de Canto cGMP',
+    position: [1.6, 1.7, -0.8],
+    target: [2.88, 1.2, -2.1],
   },
   {
     id: 'sliding_door',
@@ -91,6 +95,11 @@ interface CameraToolbarProps {
   isMeasuring: boolean;
   onToggleMeasure: () => void;
   measuredDistance: number | null;
+  isOutlinerOpen?: boolean;
+  onToggleOutliner?: () => void;
+  hasSelectedItem?: boolean;
+  lockCameraRotation?: boolean;
+  onToggleLockCameraRotation?: () => void;
 }
 
 export const CameraToolbar: React.FC<CameraToolbarProps> = ({
@@ -111,6 +120,11 @@ export const CameraToolbar: React.FC<CameraToolbarProps> = ({
   isMeasuring,
   onToggleMeasure,
   measuredDistance,
+  isOutlinerOpen,
+  onToggleOutliner,
+  hasSelectedItem,
+  lockCameraRotation = false,
+  onToggleLockCameraRotation,
 }) => {
   const getWallLabel = () => {
     if (wallVisibility === 'all') return 'Paredes: Todas';
@@ -209,6 +223,34 @@ export const CameraToolbar: React.FC<CameraToolbarProps> = ({
         >
           <Waves className={`w-3.5 h-3.5 ${isCipActive ? 'text-sky-400 animate-bounce' : 'text-slate-400'}`} />
           <span>{isCipActive ? 'Lavagem CIP Ativa' : 'Testar Lavagem CIP'}</span>
+        </button>
+
+        {/* 3D Layout Editor / Outliner Toggle */}
+        <button
+          onClick={onToggleOutliner}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all border ${
+            isOutlinerOpen || hasSelectedItem
+              ? 'bg-sky-500 border-sky-400 text-slate-950 font-bold shadow-md shadow-sky-500/30'
+              : 'bg-slate-900 hover:bg-slate-800 border-slate-800 hover:border-sky-500/60 text-sky-300'
+          }`}
+          title="Editar posições, rotações, tamanhos, demarcações e ralo 3D"
+        >
+          <Move className="w-3.5 h-3.5" />
+          <span>Editor de Layout</span>
+        </button>
+
+        {/* Lock Screen Rotation Toggle */}
+        <button
+          onClick={onToggleLockCameraRotation}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all border ${
+            lockCameraRotation
+              ? 'bg-rose-950/80 border-rose-500/70 text-rose-300 shadow-sm'
+              : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-300'
+          }`}
+          title={lockCameraRotation ? 'Giro da Tela Travado: clique para destravar o giro da câmera' : 'Travar giro da tela para facilitar a edição'}
+        >
+          {lockCameraRotation ? <Lock className="w-3.5 h-3.5 text-rose-400" /> : <Unlock className="w-3.5 h-3.5 text-slate-400" />}
+          <span>{lockCameraRotation ? 'Tela Travada' : 'Giro Livre'}</span>
         </button>
 
         {/* Wall Visibility Cutaway Program Toggle */}
