@@ -58,6 +58,12 @@ export const CAMERA_PRESETS: CameraPreset[] = [
     target: [0.85, 1.0, -2.1],
   },
   {
+    id: 'utensil_board',
+    label: 'Quadro de Utensílios Inox',
+    position: [-1.05, 1.7, -0.9],
+    target: [-1.05, 1.65, -2.35],
+  },
+  {
     id: 'platform_wash',
     label: 'Escada Plataforma Inox',
     position: [-0.3, 1.9, -0.3],

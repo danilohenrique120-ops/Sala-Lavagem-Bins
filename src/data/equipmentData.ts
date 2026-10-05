@@ -387,10 +387,38 @@ export const EQUIPMENT_LIST: EquipmentItem[] = [
       'Elemento 3D independente e totalmente editável'
     ],
     operationalRole: 'Supervisão visual da área de lavagem e bancada a partir da área adjacente.'
+  },
+  {
+    id: 'quadro_utensilios',
+    name: 'Quadro de Utensílios em Aço Inox (cGMP)',
+    category: 'Acessórios & Parede Sanitária',
+    description: 'Painel suporte sanitário para utensílios em chapa de aço inoxidável AISI 304 com acabamento espelhado de alta higienização. Equipado com matriz de pinos inclinados para secagem/drenagem de conchas dosadoras e copos graduados cônicos em inox invertidos, suporte superior de fita adesiva, bolsa porta-documentos, prateleira aramada com frascos borrifadores dosadores (Álcool 70% e detergente), trilho com mini-funis e triângulo de emergência.',
+    dimensions: {
+      width: 1.25,
+      depth: 0.18,
+      height: 0.80,
+    },
+    material: 'Aço Inoxidável AISI 304/316L com acabamento polido espelho sanitário Ra < 0,4µm',
+    normative: 'Normas Sanitárias cGMP, ANVISA RDC e ISO 14644',
+    features: [
+      'Pinos inclinados para drenagem gravitacional dos copos e conchas invertidas',
+      'Porta-frascos com frascos borrifadores de álcool 70% e detergente neutro',
+      'Dispensador de fita e compartimento para fichas de higienização',
+      'Triângulo de acionamento de segurança em inox no lado esquerdo',
+      'Elemento 3D independente totalmente móvel e rotacionável no espaço 3D'
+    ],
+    operationalRole: 'Armazenamento organizado, asséptico e de secagem rápida dos utensílios dosadores de pesagem e lavagem na sala limpa.'
   }
 ];
 
 export const HOTSPOTS_DATA: HotspotItem[] = [
+  {
+    id: 'hs_utensils',
+    title: 'Quadro de Utensílios Inox',
+    subtitle: 'Conchas, Frascos & Acessórios cGMP',
+    position: [-1.05, 1.75, -2.32],
+    equipmentId: 'quadro_utensilios',
+  },
   {
     id: 'hs_window_left',
     title: 'Visor Farmacêutico',

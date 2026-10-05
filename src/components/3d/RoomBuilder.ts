@@ -1793,6 +1793,260 @@ export class RoomBuilder {
     root.add(windowRight);
     interactiveObjects['cleanroom_window_right'] = windowRight;
 
+    // --- 11.8. STAINLESS STEEL UTENSIL BOARD (QUADRO DE UTENSÍLIOS) ---
+    // "Poderia reproduzir este suporte de inox da imagem em anexo? Colocar na parede ao lado da janela, porem de forma editavel para que seja possível movimenta-lo e rotaciona-lo."
+
+    const utensilBoardGroup = new THREE.Group();
+    utensilBoardGroup.name = 'Quadro_Utensilios_Inox';
+    // Placed on the back wall beside the left window, directly above the counter / sink
+    utensilBoardGroup.position.set(-1.05, 1.65, -halfD + 0.03);
+
+    const boardW = 1.25;
+    const boardH = 0.80;
+    const boardD = 0.012;
+
+    const mirrorSteelMat = new THREE.MeshStandardMaterial({
+      color: 0xf1f5f9,
+      roughness: 0.12,
+      metalness: 0.95,
+      envMap: envMap,
+      envMapIntensity: 1.0,
+    });
+
+    // 1. Backing Plate (Chapa Espelho Inox AISI 304)
+    const backPlateMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(boardW, boardH, boardD),
+      mirrorSteelMat
+    );
+    backPlateMesh.castShadow = true;
+    backPlateMesh.receiveShadow = true;
+    utensilBoardGroup.add(backPlateMesh);
+
+    // 4 Corner Standoff Wall Spacers
+    const standoffGeo = new THREE.CylinderGeometry(0.016, 0.016, 0.02, 16);
+    const standoffOffsets = [
+      [-boardW / 2 + 0.035, boardH / 2 - 0.035],
+      [boardW / 2 - 0.035, boardH / 2 - 0.035],
+      [-boardW / 2 + 0.035, -boardH / 2 + 0.035],
+      [boardW / 2 - 0.035, -boardH / 2 + 0.035],
+    ];
+    standoffOffsets.forEach(([soX, soY]) => {
+      const so = new THREE.Mesh(standoffGeo, mirrorSteelMat);
+      so.rotation.x = Math.PI / 2;
+      so.position.set(soX, soY, -0.005);
+      utensilBoardGroup.add(so);
+    });
+
+    // 2. Identification Header ("QUADRO DE UTENSÍLIOS")
+    const boardCanvas = document.createElement('canvas');
+    boardCanvas.width = 512;
+    boardCanvas.height = 64;
+    const boardCtx = boardCanvas.getContext('2d')!;
+    boardCtx.fillStyle = '#1d4ed8'; // Industrial pharmaceutical blue
+    boardCtx.fillRect(0, 0, 512, 64);
+    boardCtx.fillStyle = '#ffffff';
+    boardCtx.font = 'bold 30px sans-serif';
+    boardCtx.textAlign = 'center';
+    boardCtx.textBaseline = 'middle';
+    boardCtx.fillText('QUADRO DE UTENSÍLIOS', 256, 32);
+    const boardLabelTex = new THREE.CanvasTexture(boardCanvas);
+    const boardLabelMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.28, 0.036),
+      new THREE.MeshBasicMaterial({ map: boardLabelTex })
+    );
+    boardLabelMesh.position.set(0.02, boardH / 2 - 0.045, boardD / 2 + 0.002);
+    utensilBoardGroup.add(boardLabelMesh);
+
+    // 3. Conical Stainless Steel Utensils (Pás dosadoras e copos cônicos em inox invertidos)
+    const createConicalScoop = (
+      topR: number,
+      bottomR: number,
+      height: number,
+      hasHandle = true,
+      tiltForward = -0.22,
+      tiltSide = 0.08
+    ) => {
+      const g = new THREE.Group();
+      // Main conical body (inverted: top is wider, bottom is narrower)
+      const coneGeo = new THREE.CylinderGeometry(bottomR, topR, height, 20);
+      const coneMesh = new THREE.Mesh(coneGeo, mirrorSteelMat);
+      coneMesh.castShadow = true;
+      g.add(coneMesh);
+
+      // Hollow interior lip simulation (ring at wide rim)
+      const rimGeo = new THREE.TorusGeometry(topR, 0.003, 8, 20);
+      const rimMesh = new THREE.Mesh(rimGeo, mirrorSteelMat);
+      rimMesh.rotation.x = Math.PI / 2;
+      rimMesh.position.set(0, -height / 2, 0);
+      g.add(rimMesh);
+
+      // Ergonomic Stainless Steel D-Handle
+      if (hasHandle) {
+        const handleCurve = new THREE.QuadraticBezierCurve3(
+          new THREE.Vector3(topR + 0.005, -height / 3, 0),
+          new THREE.Vector3(topR + 0.045, 0, 0),
+          new THREE.Vector3(bottomR + 0.005, height / 3, 0)
+        );
+        const handleGeo = new THREE.TubeGeometry(handleCurve, 12, 0.006, 8, false);
+        const handleMesh = new THREE.Mesh(handleGeo, mirrorSteelMat);
+        g.add(handleMesh);
+      }
+
+      // Mounting peg from backplate to scoop
+      const peg = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.006, 0.006, 0.08, 12),
+        mirrorSteelMat
+      );
+      peg.rotation.x = Math.PI / 2;
+      peg.position.set(0, 0, -0.04);
+      g.add(peg);
+
+      g.rotation.x = tiltForward;
+      g.rotation.z = tiltSide;
+      return g;
+    };
+
+    // Columns of conical scoops on the left and center
+    const scoopConfigs = [
+      // Top Row
+      { x: -0.45, y: 0.17, topR: 0.065, botR: 0.045, h: 0.26, handle: true, tF: -0.25, tS: 0.12 },
+      { x: -0.28, y: 0.17, topR: 0.058, botR: 0.040, h: 0.25, handle: true, tF: -0.22, tS: 0.10 },
+      { x: -0.12, y: 0.19, topR: 0.045, botR: 0.030, h: 0.24, handle: false, tF: -0.20, tS: 0.06 },
+      { x: 0.04, y: 0.16, topR: 0.062, botR: 0.042, h: 0.32, handle: true, tF: -0.24, tS: 0.14 },
+
+      // Middle Row
+      { x: -0.44, y: -0.06, topR: 0.060, botR: 0.042, h: 0.25, handle: true, tF: -0.22, tS: 0.10 },
+      { x: -0.28, y: -0.06, topR: 0.055, botR: 0.038, h: 0.24, handle: true, tF: -0.20, tS: 0.08 },
+      { x: -0.12, y: -0.05, topR: 0.050, botR: 0.035, h: 0.23, handle: false, tF: -0.18, tS: 0.06 },
+      { x: 0.04, y: -0.08, topR: 0.055, botR: 0.038, h: 0.26, handle: true, tF: -0.22, tS: 0.10 },
+
+      // Bottom Row
+      { x: -0.42, y: -0.28, topR: 0.068, botR: 0.046, h: 0.26, handle: true, tF: 0.20, tS: -0.10 },
+      { x: -0.27, y: -0.28, topR: 0.052, botR: 0.036, h: 0.23, handle: true, tF: -0.18, tS: 0.08 },
+      { x: -0.12, y: -0.26, topR: 0.048, botR: 0.032, h: 0.22, handle: false, tF: -0.18, tS: 0.05 },
+      { x: 0.04, y: -0.27, topR: 0.050, botR: 0.034, h: 0.23, handle: true, tF: -0.20, tS: 0.08 },
+    ];
+
+    scoopConfigs.forEach((cfg) => {
+      const sc = createConicalScoop(cfg.topR, cfg.botR, cfg.h, cfg.handle, cfg.tF, cfg.tS);
+      sc.position.set(cfg.x, cfg.y, boardD / 2 + 0.08);
+      utensilBoardGroup.add(sc);
+    });
+
+    // 4. Right Utility Section (Dispenser, Tape Holder, Squeeze Bottles & Mini Funnels)
+    // Upper: Stainless Steel Tape Dispenser with Grey Tape Roll
+    const tapeHolder = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.09, 0.06),
+      mirrorSteelMat
+    );
+    tapeHolder.position.set(0.36, 0.16, boardD / 2 + 0.04);
+    const tapeRoll = new THREE.Mesh(
+      new THREE.TorusGeometry(0.036, 0.016, 16, 24),
+      new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.5, metalness: 0.2 })
+    );
+    tapeRoll.position.set(0.36, 0.22, boardD / 2 + 0.05);
+    utensilBoardGroup.add(tapeHolder, tapeRoll);
+
+    // Upper: Stainless Sheet Metal Document Pocket
+    const docPocket = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 0.20, 0.035),
+      mirrorSteelMat
+    );
+    docPocket.position.set(0.20, 0.16, boardD / 2 + 0.025);
+    docPocket.castShadow = true;
+    utensilBoardGroup.add(docPocket);
+
+    // Middle: Stainless Wire/Sheet Caddy Shelf with Squeeze Bottles
+    const caddyShelf = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.06, 0.10),
+      mirrorSteelMat
+    );
+    caddyShelf.position.set(0.35, -0.05, boardD / 2 + 0.06);
+    utensilBoardGroup.add(caddyShelf);
+
+    // Squeeze Bottle Helper (Frascos borrifadores com bico dosador)
+    const createSqueezeBottle = (capColor: number) => {
+      const bGroup = new THREE.Group();
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: 0xf8fafc,
+        roughness: 0.35,
+        metalness: 0.05,
+        transparent: true,
+        opacity: 0.85,
+      });
+      const bottleBody = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.026, 0.026, 0.12, 16),
+        bodyMat
+      );
+      bottleBody.position.set(0, 0.06, 0);
+      bGroup.add(bottleBody);
+
+      const bottleNeck = new THREE.Mesh(
+        new THREE.ConeGeometry(0.026, 0.03, 16),
+        bodyMat
+      );
+      bottleNeck.position.set(0, 0.135, 0);
+      bGroup.add(bottleNeck);
+
+      const capMat = new THREE.MeshStandardMaterial({ color: capColor, roughness: 0.3 });
+      const capMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.02, 16), capMat);
+      capMesh.position.set(0, 0.155, 0);
+      bGroup.add(capMesh);
+
+      const nozzleCurve = new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(0, 0.165, 0),
+        new THREE.Vector3(0, 0.205, 0.01),
+        new THREE.Vector3(0.025, 0.19, 0.02)
+      );
+      const nozzleGeo = new THREE.TubeGeometry(nozzleCurve, 10, 0.003, 8, false);
+      const nozzleMesh = new THREE.Mesh(nozzleGeo, capMat);
+      bGroup.add(nozzleMesh);
+
+      return bGroup;
+    };
+
+    // Bottle 1: Álcool 70% (Blue Cap)
+    const bottleAlcohol = createSqueezeBottle(0x2563eb);
+    bottleAlcohol.position.set(0.31, -0.05, boardD / 2 + 0.07);
+    bottleAlcohol.castShadow = true;
+
+    // Bottle 2: Detergente Neutro (White Cap)
+    const bottleSoap = createSqueezeBottle(0xf1f5f9);
+    bottleSoap.position.set(0.40, -0.05, boardD / 2 + 0.07);
+    bottleSoap.castShadow = true;
+    utensilBoardGroup.add(bottleAlcohol, bottleSoap);
+
+    // Lower: Stainless Rail with 3 Small Conical Funnels / Mini Scoops
+    const funnelRail = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.012, 0.07),
+      mirrorSteelMat
+    );
+    funnelRail.position.set(0.35, -0.22, boardD / 2 + 0.04);
+    utensilBoardGroup.add(funnelRail);
+
+    const funnelPositions = [0.27, 0.35, 0.43];
+    funnelPositions.forEach((fX) => {
+      const funnel = new THREE.Mesh(
+        new THREE.ConeGeometry(0.032, 0.09, 16),
+        mirrorSteelMat
+      );
+      funnel.rotation.x = -0.22;
+      funnel.position.set(fX, -0.24, boardD / 2 + 0.06);
+      utensilBoardGroup.add(funnel);
+    });
+
+    // 5. Left Safety Handle (Triângulo de acionamento em inox)
+    const triP1 = new THREE.Vector3(-boardW / 2 - 0.01, 0.28, 0.05);
+    const triP2 = new THREE.Vector3(-boardW / 2 - 0.09, 0.12, 0.05);
+    const triP3 = new THREE.Vector3(-boardW / 2 + 0.04, 0.12, 0.05);
+    const triPoints = [triP1, triP2, triP3, triP1];
+    const triGeo = new THREE.BufferGeometry().setFromPoints(triPoints);
+    const triLine = new THREE.Line(triGeo, new THREE.LineBasicMaterial({ color: 0x94a3b8, linewidth: 3 }));
+    utensilBoardGroup.add(triLine);
+
+    root.add(utensilBoardGroup);
+    interactiveObjects['quadro_utensilios'] = utensilBoardGroup;
+
     // --- 12. TECHNICAL DIMENSION LINES ---
     const createDimLine = (start: THREE.Vector3, end: THREE.Vector3, labelText: string, offset: THREE.Vector3) => {
       const g = new THREE.Group();

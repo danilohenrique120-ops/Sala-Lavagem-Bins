@@ -247,6 +247,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       wash_hose_coiled: { name: 'Mangueira de Lavagem com Pistola', cat: 'Lavagem & Utilidades' },
       cleanroom_window_left: { name: 'Janela Farmacêutica Esquerda (Atrás da Pia)', cat: 'Esquadrias & Visores' },
       cleanroom_window_right: { name: 'Janela Farmacêutica Direita (Atrás da Pia)', cat: 'Esquadrias & Visores' },
+      quadro_utensilios: { name: 'Quadro de Utensílios Inox', cat: 'Acessórios & Parede' },
     };
 
     for (const [id, obj] of Object.entries(room.interactiveObjects)) {
