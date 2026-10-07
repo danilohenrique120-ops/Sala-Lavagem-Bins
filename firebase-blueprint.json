@@ -1,0 +1,69 @@
+{
+  "entities": {
+    "RoomLayout": {
+      "title": "RoomLayout",
+      "description": "3D Cleanroom layout state containing object transforms, visibility, custom items, and room settings",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique layout document identifier"
+        },
+        "name": {
+          "type": "string",
+          "description": "Layout version or title"
+        },
+        "transforms": {
+          "type": "object",
+          "description": "Map of object IDs to position, rotation, and scale"
+        },
+        "visibility": {
+          "type": "object",
+          "description": "Map of object IDs to boolean visibility"
+        },
+        "doorOpen": {
+          "type": "boolean",
+          "description": "Whether the 3.5m sliding door is open"
+        },
+        "cipActive": {
+          "type": "boolean",
+          "description": "Whether CIP spray simulation is active"
+        },
+        "marbleTone": {
+          "type": "string",
+          "description": "Selected marble tone finish"
+        },
+        "steelFinish": {
+          "type": "string",
+          "description": "Selected stainless steel finish"
+        },
+        "floorColor": {
+          "type": "string",
+          "description": "Selected epoxy floor color"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "Client or user identifier who made the change"
+        }
+      },
+      "required": [
+        "id",
+        "transforms",
+        "visibility"
+      ]
+    }
+  },
+  "firestore": {
+    "/room_layouts/{layoutId}": {
+      "schema": {
+        "$ref": "#/entities/RoomLayout"
+      },
+      "description": "Persisted 3D cleanroom layouts synchronized across all devices in real time"
+    }
+  }
+}

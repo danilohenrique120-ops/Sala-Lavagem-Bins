@@ -9,6 +9,9 @@ import {
   Eye,
   EyeOff,
   Move,
+  Cloud,
+  RefreshCw,
+  Check,
 } from 'lucide-react';
 import { RenderMode, LightingPreset, WallVisibility } from '../../types/archviz';
 
@@ -27,6 +30,8 @@ interface HeaderNavProps {
   onTakeScreenshot: () => void;
   isOutlinerOpen?: boolean;
   onToggleOutliner?: () => void;
+  cloudStatus?: 'synced' | 'saving' | 'offline';
+  onManualCloudSave?: () => void;
 }
 
 export const HeaderNav: React.FC<HeaderNavProps> = ({
@@ -40,6 +45,8 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   onTakeScreenshot,
   isOutlinerOpen,
   onToggleOutliner,
+  cloudStatus = 'synced',
+  onManualCloudSave,
 }) => {
   return (
     <header className="absolute top-0 left-0 right-0 z-20 flex flex-wrap items-center justify-between px-4 py-2.5 bg-slate-950/85 backdrop-blur-md border-b border-slate-800/80 text-white select-none">
@@ -98,6 +105,33 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
           )}
           <span className="hidden sm:inline">
             {wallVisibility === 'all' ? 'Ver Paredes' : wallVisibility === 'cutaway' ? 'Corte Interno' : 'Sem Paredes'}
+          </span>
+        </button>
+
+        {/* Real-time Cloud Sync Button (Firestore) */}
+        <button
+          onClick={onManualCloudSave}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 border rounded text-xs font-semibold transition-all shadow-sm ${
+            cloudStatus === 'saving'
+              ? 'bg-amber-950/80 border-amber-500/70 text-amber-300'
+              : cloudStatus === 'offline'
+              ? 'bg-red-950/80 border-red-500/70 text-red-300'
+              : 'bg-emerald-950/80 border-emerald-500/60 hover:bg-emerald-900/90 text-emerald-300'
+          }`}
+          title="Sincronizado na Nuvem: qualquer alteração feita é salva e atualizada para quem acessar o link"
+        >
+          {cloudStatus === 'saving' ? (
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
+          ) : cloudStatus === 'offline' ? (
+            <Cloud className="w-3.5 h-3.5 text-red-400" />
+          ) : (
+            <div className="relative flex items-center">
+              <Cloud className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+            </div>
+          )}
+          <span className="hidden sm:inline">
+            {cloudStatus === 'saving' ? 'Salvando...' : 'Nuvem Conectada'}
           </span>
         </button>
 

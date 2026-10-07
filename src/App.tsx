@@ -26,6 +26,13 @@ import { TechnicalBlueprintModal } from './components/ui/TechnicalBlueprintModal
 import { WalkthroughGuide } from './components/ui/WalkthroughGuide';
 import { ObjectEditorPanel } from './components/ui/ObjectEditorPanel';
 import { SceneOutlinerDrawer } from './components/ui/SceneOutlinerDrawer';
+import { Cloud, CheckCircle2 } from 'lucide-react';
+import {
+  subscribeToRoomLayout,
+  saveRoomLayoutToCloud,
+  testConnection,
+  getClientId,
+} from './services/firebase';
 
 export default function App() {
   // Render & Lighting Configuration
@@ -51,6 +58,13 @@ export default function App() {
   const [isDoorOpen, setIsDoorOpen] = useState<boolean>(false);
   const [isTapActive, setIsTapActive] = useState<boolean>(true);
   const [isCipActive, setIsCipActive] = useState<boolean>(false);
+
+  // Real-time Cloud Synchronization (Firebase Firestore)
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'saving' | 'offline'>('synced');
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [remoteAuthorNotice, setRemoteAuthorNotice] = useState<string | null>(null);
+  const isApplyingCloudUpdateRef = useRef<boolean>(false);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 3D Layout Editor State
   const [transformMode, setTransformMode] = useState<TransformMode>('translate');
@@ -137,12 +151,125 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedEquipmentId]);
 
+  // Real-Time Cloud Sync: Subscribe to Firestore changes from any device
+  useEffect(() => {
+    testConnection().then((connected) => {
+      if (!connected) setCloudSyncStatus('offline');
+    });
+
+    const unsubscribe = subscribeToRoomLayout(
+      (cloudLayout) => {
+        isApplyingCloudUpdateRef.current = true;
+
+        if (imperativeEditorRef.current) {
+          imperativeEditorRef.current.applyLayoutSnapshot({
+            transforms: cloudLayout.transforms,
+            visibility: cloudLayout.visibility,
+          });
+        }
+
+        if (typeof cloudLayout.doorOpen === 'boolean') {
+          setIsDoorOpen(cloudLayout.doorOpen);
+        }
+        if (typeof cloudLayout.cipActive === 'boolean') {
+          setIsCipActive(cloudLayout.cipActive);
+        }
+        if (cloudLayout.marbleTone) {
+          setMarbleTone(cloudLayout.marbleTone as MarbleTone);
+        }
+        if (cloudLayout.floorColor) {
+          setFloorColor(cloudLayout.floorColor as FloorColor);
+        }
+        if (cloudLayout.steelFinish) {
+          setSteelFinish(cloudLayout.steelFinish as SteelFinish);
+        }
+
+        if (cloudLayout.visibility) {
+          setSceneItems((prev) =>
+            prev.map((item) => ({
+              ...item,
+              visible:
+                cloudLayout.visibility[item.id] !== undefined
+                  ? cloudLayout.visibility[item.id]
+                  : item.visible,
+            }))
+          );
+        }
+
+        const myId = getClientId();
+        if (cloudLayout.updatedBy && cloudLayout.updatedBy !== myId) {
+          setRemoteAuthorNotice(`Layout sincronizado em tempo real (${cloudLayout.updatedBy})`);
+          setTimeout(() => setRemoteAuthorNotice(null), 4500);
+        }
+
+        setLastSyncTime(new Date(cloudLayout.updatedAt));
+        setCloudSyncStatus('synced');
+
+        setTimeout(() => {
+          isApplyingCloudUpdateRef.current = false;
+        }, 350);
+      },
+      (err) => {
+        console.warn('Real-time sync notice:', err);
+        setCloudSyncStatus('offline');
+      }
+    );
+
+    return () => {
+      unsubscribe();
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, []);
+
+  const triggerCloudSave = (immediate = false) => {
+    if (isApplyingCloudUpdateRef.current) return;
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    setCloudSyncStatus('saving');
+
+    const performSave = async () => {
+      if (!imperativeEditorRef.current) return;
+      const snapshot = imperativeEditorRef.current.getLayoutSnapshot();
+
+      try {
+        await saveRoomLayoutToCloud({
+          transforms: snapshot.transforms,
+          visibility: snapshot.visibility,
+          doorOpen: isDoorOpen,
+          cipActive: isCipActive,
+          marbleTone,
+          floorColor,
+          steelFinish,
+          name: 'Layout Oficial Sala Limpa',
+        });
+        setCloudSyncStatus('synced');
+        setLastSyncTime(new Date());
+      } catch (err) {
+        console.error('Failed to save layout to cloud:', err);
+        setCloudSyncStatus('offline');
+      }
+    };
+
+    if (immediate) {
+      performSave();
+    } else {
+      saveTimeoutRef.current = setTimeout(performSave, 550);
+    }
+  };
+
   const handleSelectPreset = (preset: CameraPreset) => {
     setActivePreset(preset);
   };
 
   const handleToggleDoor = () => {
-    setIsDoorOpen((prev) => !prev);
+    setIsDoorOpen((prev) => {
+      const next = !prev;
+      setTimeout(() => triggerCloudSave(false), 50);
+      return next;
+    });
   };
 
   const handleToggleTap = () => {
@@ -150,7 +277,11 @@ export default function App() {
   };
 
   const handleToggleCip = () => {
-    setIsCipActive((prev) => !prev);
+    setIsCipActive((prev) => {
+      const next = !prev;
+      setTimeout(() => triggerCloudSave(false), 50);
+      return next;
+    });
   };
 
   const handleCycleWallVisibility = () => {
@@ -184,6 +315,7 @@ export default function App() {
         scale: { ...currentTransform.scale, ...(data.scale || {}) },
       });
     }
+    triggerCloudSave();
   };
 
   const handleDeleteSelected = () => {
@@ -193,18 +325,21 @@ export default function App() {
     setSceneItems((prev) =>
       prev.map((i) => (i.id === idToDelete ? { ...i, visible: false } : i))
     );
+    triggerCloudSave();
   };
 
   const handleDuplicateSelected = () => {
     if (imperativeEditorRef.current) {
       imperativeEditorRef.current.duplicateSelected();
     }
+    triggerCloudSave();
   };
 
   const handleResetSelected = () => {
     if (imperativeEditorRef.current) {
       imperativeEditorRef.current.resetSelected();
     }
+    triggerCloudSave();
   };
 
   const handleResetAll = () => {
@@ -212,6 +347,7 @@ export default function App() {
       imperativeEditorRef.current.resetAll();
       setSceneItems((prev) => prev.map((i) => ({ ...i, visible: true })));
     }
+    triggerCloudSave();
   };
 
   const handleToggleItemVisibility = (id: string) => {
@@ -221,6 +357,7 @@ export default function App() {
         prev.map((i) => (i.id === id ? { ...i, visible: !i.visible } : i))
       );
     }
+    triggerCloudSave();
   };
 
   const handleDeleteItem = (id: string) => {
@@ -230,6 +367,7 @@ export default function App() {
         prev.map((i) => (i.id === id ? { ...i, visible: false } : i))
       );
     }
+    triggerCloudSave();
   };
 
   const handleAddItem = (type: 'bin' | 'drain' | 'demarcation') => {
@@ -258,6 +396,7 @@ export default function App() {
           isCustom: true,
         },
       ]);
+      triggerCloudSave();
     }
   };
 
@@ -318,6 +457,7 @@ export default function App() {
         onTransformChange={setCurrentTransform}
         onSceneItemsInitialized={setSceneItems}
         imperativeEditorRef={imperativeEditorRef}
+        onLayoutModified={() => triggerCloudSave()}
       />
 
       {/* Header Navigation with Realtime Metrics & Dimensions */}
@@ -336,6 +476,8 @@ export default function App() {
         onTakeScreenshot={handleTakeScreenshot}
         isOutlinerOpen={isOutlinerOpen}
         onToggleOutliner={() => setIsOutlinerOpen((prev) => !prev)}
+        cloudStatus={cloudSyncStatus}
+        onManualCloudSave={() => triggerCloudSave(true)}
       />
 
       {/* Floating 3D Object Editor Panel (When Item is Selected) */}
@@ -428,12 +570,29 @@ export default function App() {
         exposure={exposure}
         onSelectExposure={setExposure}
         marbleTone={marbleTone}
-        onSelectMarble={setMarbleTone}
+        onSelectMarble={(tone) => {
+          setMarbleTone(tone);
+          setTimeout(() => triggerCloudSave(), 80);
+        }}
         steelFinish={steelFinish}
-        onSelectSteel={setSteelFinish}
+        onSelectSteel={(steel) => {
+          setSteelFinish(steel);
+          setTimeout(() => triggerCloudSave(), 80);
+        }}
         floorColor={floorColor}
-        onSelectFloor={setFloorColor}
+        onSelectFloor={(color) => {
+          setFloorColor(color);
+          setTimeout(() => triggerCloudSave(), 80);
+        }}
       />
+
+      {/* Real-time Cloud Synchronization Live Toast Banner */}
+      {remoteAuthorNotice && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2 bg-emerald-950/90 border border-emerald-500/70 text-emerald-200 rounded-full shadow-2xl backdrop-blur-md animate-bounce text-xs font-medium">
+          <Cloud className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
+          <span>{remoteAuthorNotice}</span>
+        </div>
+      )}
 
       {/* Technical CAD Blueprint Modal Overlay */}
       <TechnicalBlueprintModal

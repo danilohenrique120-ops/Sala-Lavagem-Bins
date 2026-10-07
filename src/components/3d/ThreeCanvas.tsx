@@ -33,6 +33,14 @@ export interface ImperativeEditorActions {
   toggleItemVisibility: (id: string) => void;
   deleteItemById: (id: string) => void;
   addItem: (type: 'bin' | 'drain' | 'demarcation') => void;
+  getLayoutSnapshot: () => {
+    transforms: Record<string, { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } }>;
+    visibility: Record<string, boolean>;
+  };
+  applyLayoutSnapshot: (snapshot: {
+    transforms?: Record<string, { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } }>;
+    visibility?: Record<string, boolean>;
+  }) => void;
 }
 
 interface ThreeCanvasProps {
@@ -67,6 +75,7 @@ interface ThreeCanvasProps {
   onTransformChange?: (data: TransformData) => void;
   onSceneItemsInitialized?: (items: SceneItemMeta[]) => void;
   imperativeEditorRef?: React.MutableRefObject<ImperativeEditorActions | null>;
+  onLayoutModified?: () => void;
 }
 
 export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
@@ -101,6 +110,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   onTransformChange,
   onSceneItemsInitialized,
   imperativeEditorRef,
+  onLayoutModified,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -117,6 +127,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const defaultTransformsRef = useRef<{ [id: string]: TransformData }>({});
   const onTransformChangeRef = useRef(onTransformChange);
   onTransformChangeRef.current = onTransformChange;
+  const onLayoutModifiedRef = useRef(onLayoutModified);
+  onLayoutModifiedRef.current = onLayoutModified;
 
   // Hotspots Sprite Group
   const hotspotsGroupRef = useRef<THREE.Group | null>(null);
@@ -291,6 +303,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       isDraggingGizmoRef.current = Boolean(event.value);
       if (controlsRef.current) {
         controlsRef.current.enabled = !event.value;
+      }
+      if (!event.value) {
+        onLayoutModifiedRef.current?.();
       }
     });
 
@@ -791,6 +806,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
         if (highlightBoxRef.current) highlightBoxRef.current.setFromObject(obj);
         if (transformControlsRef.current) transformControlsRef.current.attach(obj);
+        onLayoutModifiedRef.current?.();
       },
       deleteSelected: () => {
         if (!selectedEquipmentId || !roomMeshesRef.current) return;
@@ -800,6 +816,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         if (transformControlsRef.current) transformControlsRef.current.detach();
         if (highlightBoxRef.current) highlightBoxRef.current.visible = false;
         onSelectEquipment(null);
+        onLayoutModifiedRef.current?.();
       },
       duplicateSelected: () => {
         if (!selectedEquipmentId || !roomMeshesRef.current || !sceneRef.current) return;
@@ -827,6 +844,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         };
 
         onSelectEquipment(newId);
+        onLayoutModifiedRef.current?.();
       },
       resetSelected: () => {
         if (!selectedEquipmentId || !roomMeshesRef.current) return;
@@ -846,6 +864,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         if (highlightBoxRef.current) highlightBoxRef.current.setFromObject(obj);
         if (transformControlsRef.current) transformControlsRef.current.attach(obj);
         if (onTransformChange) onTransformChange(def);
+        onLayoutModifiedRef.current?.();
       },
       resetAll: () => {
         if (!roomMeshesRef.current) return;
@@ -869,6 +888,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           const def = defaultTransformsRef.current[selectedEquipmentId];
           if (def && onTransformChange) onTransformChange(def);
         }
+        onLayoutModifiedRef.current?.();
       },
       toggleItemVisibility: (id: string) => {
         if (!roomMeshesRef.current) return;
@@ -880,6 +900,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           if (highlightBoxRef.current) highlightBoxRef.current.visible = false;
           onSelectEquipment(null);
         }
+        onLayoutModifiedRef.current?.();
       },
       deleteItemById: (id: string) => {
         if (!roomMeshesRef.current) return;
@@ -891,6 +912,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           if (highlightBoxRef.current) highlightBoxRef.current.visible = false;
           onSelectEquipment(null);
         }
+        onLayoutModifiedRef.current?.();
       },
       addItem: (type) => {
         if (!roomMeshesRef.current || !sceneRef.current) return;
@@ -926,6 +948,73 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         };
 
         onSelectEquipment(newId);
+        onLayoutModifiedRef.current?.();
+      },
+      getLayoutSnapshot: () => {
+        const transforms: Record<string, { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } }> = {};
+        const visibility: Record<string, boolean> = {};
+
+        if (roomMeshesRef.current) {
+          for (const [id, obj] of Object.entries(roomMeshesRef.current.interactiveObjects)) {
+            transforms[id] = {
+              position: {
+                x: Number(obj.position.x.toFixed(3)),
+                y: Number(obj.position.y.toFixed(3)),
+                z: Number(obj.position.z.toFixed(3)),
+              },
+              rotation: {
+                x: Number(THREE.MathUtils.radToDeg(obj.rotation.x).toFixed(1)),
+                y: Number(THREE.MathUtils.radToDeg(obj.rotation.y).toFixed(1)),
+                z: Number(THREE.MathUtils.radToDeg(obj.rotation.z).toFixed(1)),
+              },
+              scale: {
+                x: Number(obj.scale.x.toFixed(2)),
+                y: Number(obj.scale.y.toFixed(2)),
+                z: Number(obj.scale.z.toFixed(2)),
+              },
+            };
+            visibility[id] = obj.visible;
+          }
+        }
+
+        return { transforms, visibility };
+      },
+      applyLayoutSnapshot: (snapshot) => {
+        if (!roomMeshesRef.current) return;
+        const { transforms, visibility } = snapshot;
+
+        if (transforms) {
+          for (const [id, t] of Object.entries(transforms)) {
+            const obj = roomMeshesRef.current.interactiveObjects[id];
+            if (obj && t && t.position) {
+              obj.position.set(t.position.x, t.position.y, t.position.z);
+              if (t.rotation) {
+                obj.rotation.set(
+                  THREE.MathUtils.degToRad(t.rotation.x),
+                  THREE.MathUtils.degToRad(t.rotation.y),
+                  THREE.MathUtils.degToRad(t.rotation.z)
+                );
+              }
+              if (t.scale) {
+                obj.scale.set(t.scale.x, t.scale.y, t.scale.z);
+              }
+            }
+          }
+        }
+
+        if (visibility) {
+          for (const [id, isVis] of Object.entries(visibility)) {
+            const obj = roomMeshesRef.current.interactiveObjects[id];
+            if (obj) {
+              obj.visible = Boolean(isVis);
+            }
+          }
+        }
+
+        if (selectedEquipmentId && roomMeshesRef.current.interactiveObjects[selectedEquipmentId]) {
+          const selObj = roomMeshesRef.current.interactiveObjects[selectedEquipmentId];
+          if (highlightBoxRef.current) highlightBoxRef.current.setFromObject(selObj);
+        }
       },
     };
   });
